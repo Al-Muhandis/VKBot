@@ -482,16 +482,15 @@ begin
       aPayloadJSON := GetJSON(aPayloadStr) as TJSONObject;
       if Assigned(aPayloadJSON) then
       begin
-        aCommand := LowerCase(aPayloadJSON.Get('command', ''));
-        if (aCommand <> '') and fCommands.Contains(aCommand) then
-        begin
-          aHandler := fCommands[aCommand];
-          aHandler(aMsg, []);
-          DoLog(llInfo, Format('Button command executed: %s by user %d',
-            [aCommand, aMsg.FromID]));
-          aPayloadJSON.Free;
-          Exit;
-        end;
+        aCommand := LowerCase(aPayloadJSON.Get('command', EmptyStr));
+        if (aCommand <> '') then
+          if fCommands.GetValue(aCommand, aHandler) then
+          begin
+            aHandler(aMsg, []);
+            DoLog(llInfo, Format('Button command executed: %s by user %d', [aCommand, aMsg.FromID]));
+            aPayloadJSON.Free;
+            Exit;
+          end;
         aPayloadJSON.Free;
       end;
     end;
@@ -512,8 +511,7 @@ begin
           else
             SetLength(aArgs, 0);
           aHandler(aMsg, aArgs);
-          DoLog(llInfo, Format('Text command executed: /%s by user %d',
-            [aCommand, aMsg.FromID]));
+          DoLog(llInfo, Format('Text command executed: /%s by user %d', [aCommand, aMsg.FromID]));
           Exit;
         end;
       end;
