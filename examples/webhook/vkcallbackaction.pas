@@ -10,7 +10,7 @@ uses
 type
   TVKCallbackAction = class(TBrookAction)
   public
-    class procedure Post; override;
+    procedure Post; override;
   end;
 
 implementation
@@ -21,13 +21,13 @@ uses
 var
   Webhook: TVKWebhookProcessor;
 
-class procedure TVKCallbackAction.Post;
+procedure TVKCallbackAction.Post;
 var
   R: TVKWebhookResponse;
 begin
   R := Webhook.ProcessWebhook(HttpRequest.Content);
-  HttpResponse.Code := R.StatusCode;
-  HttpResponse.Content := R.Body;
+  HttpResponse.Code := R.HTTPStatus;
+  HttpResponse.Content := R.Content;
 end;
 
 end.
