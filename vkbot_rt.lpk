@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <Package Version="5">
+    <PathDelim Value="\"/>
+    <Name Value="vkbot_rt"/>
+    <Type Value="RunTimeOnly"/>
+    <Author Value="Renat Suleymanov, Russia, https://Renat.Su/"/>
+    <CompilerOptions>
+      <Version Value="11"/>
+      <PathDelim Value="\"/>
+      <SearchPaths>
+        <OtherUnitFiles Value="src"/>
+        <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
+      </SearchPaths>
+      <Other>
+        <CompilerMessages>
+          <IgnoredMessages idx6058="True"/>
+        </CompilerMessages>
+      </Other>
+    </CompilerOptions>
+    <Description Value="VK bots API wrapper"/>
+    <License Value="MIT"/>
+    <Version Release="1"/>
+    <Files>
+      <Item>
+        <Filename Value="src\vkbotframework.pas"/>
+        <UnitName Value="VKBotFramework"/>
+      </Item>
+      <Item>
+        <Filename Value="src\vktypes.pas"/>
+        <UnitName Value="VKTypes"/>
+      </Item>
+      <Item>
+        <Filename Value="src\vkwebhook.pas"/>
+        <UnitName Value="VKWebhook"/>
+      </Item>
+    </Files>
+    <RequiredPkgs>
+      <Item>
+        <PackageName Value="FCL"/>
+      </Item>
+    </RequiredPkgs>
+    <UsageOptions>
+      <UnitPath Value="$(PkgOutDir)"/>
+    </UsageOptions>
+    <PublishOptions>
+      <Version Value="2"/>
+      <UseFileFilters Value="True"/>
+    </PublishOptions>
+  </Package>
+</CONFIG>
