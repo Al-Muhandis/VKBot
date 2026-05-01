@@ -85,7 +85,7 @@ type
     fServer: string;
     fKey: string;
     fTS: Int64;
-    fHTTPClient: IHTTPClient;
+    fHTTPClient: IHTTPClient; { Optional: for dependency injection in tests or custom scenarios }
     fOnLog: TOnLogEvent;
 
     procedure InitLongPoll;
@@ -99,6 +99,7 @@ type
     procedure SetEventHandler(const aEventType: String; AValue: TEventHandler);
   protected
     function CreateHTTPClient: IHTTPClient; virtual;
+    function GetHTTPClient: IHTTPClient;
     procedure ProcessMessage(const aMessage: TJSONObject);
     property RawJSON: TJSONData read fJSON write fJSON;
     property EventMap: TEventMap read fEventHandlers;
@@ -119,7 +120,7 @@ type
     { API methods }
     function SendMessage(aPeerID: Int64; const aText: string; const aKeyboard: string = ''): Boolean;
 
-    { Testing support }
+    { Testing support: inject custom HTTP client (optional) }
     procedure SetHTTPClient(aClient: IHTTPClient);
 
     property Token: string read fToken;
@@ -278,7 +279,8 @@ begin
   fMessageHandlers := THandlerList.Create;
   fEventHandlers := TEventMap.Create;
 
-  fHTTPClient := CreateHTTPClient;
+  { Note: HTTP client is now created on-demand in GetHTTPClient, not stored as a field }
+  { fHTTPClient is kept only for optional dependency injection via SetHTTPClient }
 end;
 
 destructor TVKBot.Destroy;
@@ -301,6 +303,16 @@ begin
   Result := TStandardHTTPClient.Create;
 end;
 
+function TVKBot.GetHTTPClient: IHTTPClient;
+begin
+  { If a custom client was injected via SetHTTPClient, use it }
+  if Assigned(fHTTPClient) then
+    Result := fHTTPClient
+  else
+    { Otherwise create a new temporary client for this call }
+    Result := CreateHTTPClient;
+end;
+
 procedure TVKBot.SetHTTPClient(aClient: IHTTPClient);
 begin
   fHTTPClient := aClient;
@@ -311,6 +323,8 @@ var
   aURL: string;
   i: Integer;
   aParamStr, aResponse: string;
+  aHTTPClient: IHTTPClient;
+  aIsTemporary: Boolean;
 begin
   Result := nil;
 
@@ -326,15 +340,25 @@ begin
     aURL += aParamStr;
   end;
 
-  FreeAndNil(fJSON);
-  aResponse := fHTTPClient.Get(aURL);
-  fJSON := GetJSON(aResponse);
+  { Get HTTP client - either injected or create new temporary instance }
+  aHTTPClient := GetHTTPClient;
+  aIsTemporary := not Assigned(fHTTPClient);
+  
+  try
+    FreeAndNil(fJSON);
+    aResponse := aHTTPClient.Get(aURL);
+    fJSON := GetJSON(aResponse);
 
-  if fJSON is TJSONObject then
-    Result := TJSONObject(fJSON).Find('response');
+    if fJSON is TJSONObject then
+      Result := TJSONObject(fJSON).Find('response');
 
-  if not Assigned(Result) then
-    DoLog(llError, Format('API call failed: %s, response: %s', [aMethod, aResponse]));
+    if not Assigned(Result) then
+      DoLog(llError, Format('API call failed: %s, response: %s', [aMethod, aResponse]));
+  finally
+    { If we created a temporary client (not injected), release reference }
+    if aIsTemporary then
+      aHTTPClient := nil;
+  end;
 end;
 
 procedure TVKBot.DoLog(aLogLevel: TLogLevel; const aMessage: String);
@@ -535,6 +559,7 @@ var
   aJSON: TJSONData;
   aUpdates: TJSONArray;
   i: Integer;
+  aHTTPClient: IHTTPClient;
 begin
   if fRunning then
     Exit;
@@ -547,13 +572,16 @@ begin
   fRunning := True;
   DoLog(llInfo, Format('Bot started. GroupID: %d, API v%s', [fGroupID, fAPIVersion]));
 
+  { Create or get HTTP client for the polling loop }
+  aHTTPClient := GetHTTPClient;
+
   while fRunning do
   begin
     try
       aURL := Format('%s?act=a_check&key=%s&ts=%d&wait=%d',
         [fServer, fKey, fTS, VK_LONG_POLL_WAIT]);
 
-      aResponse := fHTTPClient.Get(aURL);
+      aResponse := aHTTPClient.Get(aURL);
       aJSON := GetJSON(aResponse);
 
       if aJSON is TJSONObject then
