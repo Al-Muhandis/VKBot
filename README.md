@@ -46,11 +46,6 @@
   - передаёт событие в `TVKBot.ProcessUpdate`,
   - возвращает HTTP-статус и текст (`ok`/ошибка).
 
-### 5) Тестируемость
-
-- В `TVKBot` есть абстракция HTTP-клиента (`IHTTPClient`) и внедрение зависимости (`SetHTTPClient`),
-  что упрощает unit-тесты без реальных вызовов VK API.
-
 ---
 
 ## Быстрый старт (Long Poll)
@@ -95,24 +90,16 @@ _Bot.Start;
 ## Подключение в Lazarus
 
 1. Откройте пакет `vkbot_rt.lpk` в Lazarus.
-2. Соберите пакет (и при необходимости установите в IDE).
-3. Подключите юниты:
+2. Подключите к проекту.
+3. Укажите юниты:
 
 ```pascal
-uses
-  VKTypes, VKBotFramework, VKWebhook;
+uses VKTypes, VKBotFramework, VKWebhook;
 ```
-
-Требования по пакетам: стандартный `FCL` (указан в `vkbot_rt.lpk`).
 
 ## Логирование
 
 Используйте событие `OnLog` в `TVKBot` (и/или у `TVKWebhookProcessor`) для вывода диагностических сообщений. Уровни:
-
-- `llDebug`
-- `llInfo`
-- `llWarning`
-- `llError`
 
 ## Тесты
 
@@ -123,17 +110,11 @@ uses
 - тесты API-вызовов,
 - webhook-тесты.
 
-Запуск зависит от вашей среды Lazarus/FPC. Ориентируйтесь на проекты в папке `tests`:
-
-- `tests/console_test.lpi`
-- `tests/gui_test.lpi`
-
 ## Ограничения и заметки
 
 - Реализация ориентирована на актуальную версию VK API, заданную константой `VK_API_VERSION` (в исходниках сейчас `5.199`).
 - Для работы webhook необходимо корректно настроить Callback API в панели сообщества VK
   (URL, confirmation code, secret).
-- Для production стоит добавить собственные retry/monitoring/ограничение частоты запросов на уровне приложения.
 
 ## Лицензия
 
