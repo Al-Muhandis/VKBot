@@ -1,5 +1,7 @@
-{$mode objfpc}{$H+}{$J-}
 unit VKBotFramework;
+
+{$mode objfpc}{$H+}{$J-}
+{$Interfaces CORBA}
 
 interface
 
@@ -14,18 +16,28 @@ type
   { Event handler types }
   TMessageHandler = procedure(const aMessage: TVKMessage) of object;
   TCommandHandler = procedure(const aMessage: TVKMessage; const aArgs: TStringArray) of object;
-  TEventHandler = procedure(const aEvent: TJSONObject) of object;
+  TEventHandler   = procedure(const aEvent: TJSONObject) of object;
 
+  { Deeplink handler.
+    Called while incoming message contains ref (user income with link like vk.me/<username>?ref=<...>).
+    aMsg       — income message (any text — that user typed).
+    aRef       — ref parameter value from link.
+    aRefSource — ref_source parameter value (empty, if not passed). }
+  TDeeplinkHandler = procedure(const aMsg: TVKMessage; const aRef, aRefSource: string) of object;
+
+  { IHTTPClient }
   { HTTP Client abstraction for testing }
   IHTTPClient = interface
     ['{8F3C9A2E-1B4D-4E5F-9C8A-7D6E5F4A3B2C}']
     function Get(const aURL: string): string;
+    function GetObject: TObject;
   end;
-
-  { VK Message wrapper }
 
   { TVKMessage }
 
+  {
+    TVKMessage — JSON wrapper for incoming message.
+  }
   TVKMessage = class
   private
     fData: TJSONObject;
@@ -34,16 +46,23 @@ type
     function GetPeerID: Int64;
     function GetFromID: Int64;
     function GetPayload: string;
+    function GetRef: string;
+    function GetRefSource: string;
   public
     constructor Create(aBot: TVKBot; aData: TJSONObject);
 
     procedure Reply(const aText: string; const aKeyboard: string = '');
-    procedure Send(const aText: string; aPeerID: Int64 = 0; const aKeyboard: string = '');
+    procedure Send(const aText: string; aPeerID: Int64 = 0;
+      const aKeyboard: string = '');
 
-    property Text: string read GetText;
-    property PeerID: Int64 read GetPeerID;
-    property FromID: Int64 read GetFromID;
-    property Payload: string read GetPayload;
+    property Text:      string read GetText;
+    property PeerID:    Int64  read GetPeerID;
+    property FromID:    Int64  read GetFromID;
+    property Payload:   string read GetPayload;
+
+    property Ref:       string read GetRef;
+    property RefSource: string read GetRefSource;
+
     property Data: TJSONObject read fData;
   end;
 
@@ -61,17 +80,16 @@ type
     class function hash(s: TVKEventType; n: Integer): Integer; inline;
   end;
 
-  { Generic map with enum key }
   generic TEventTypeHashMap<T> = class(specialize THashMap<TVKEventType, T, TEventTypeHash>) end;
 
-  TCommandMap = specialize TStringHashMap<TCommandHandler>;
-  TEventMap = specialize TEventTypeHashMap<TEventHandler>;
-  THandlerList = specialize TVector<TMessageHandler>;
-
-  { Main bot class }
+  TCommandMap   = specialize TStringHashMap<TCommandHandler>;
+  TEventMap     = specialize TEventTypeHashMap<TEventHandler>;
+  THandlerList  = specialize TVector<TMessageHandler>;
 
   { TVKBot }
-
+  {
+    TVKBot — main bot class.
+  }
   TVKBot = class
   private
     fJSON: TJSONData;
@@ -81,22 +99,30 @@ type
     fCommands: TCommandMap;
     fMessageHandlers: THandlerList;
     fEventHandlers: TEventMap;
+    fOnDeeplink: TDeeplinkHandler;
+
     fRunning: Boolean;
     fServer: string;
     fKey: string;
     fTS: Int64;
-    fHTTPClient: IHTTPClient; { Optional: for dependency injection in tests or custom scenarios }
+    fHTTPClient: IHTTPClient; // for injected HTTPClient cases ( mock client)
     fOnLog: TOnLogEvent;
 
     procedure InitLongPoll;
     function APICall(const aMethod: string; const aParams: TJSONObject): TJSONData;
-    procedure DoLog(aLogLevel: TLogLevel; const aMessage: String); private
+    procedure DoLog(aLogLevel: TLogLevel; const aMessage: String);
+
     function GetCommandHandler(const aCommand: string): TCommandHandler;
-    function GetEventHandler(const aEventType: String): TEventHandler;
     procedure SetCommandHandler(const aCommand: string; aHandler: TCommandHandler);
-    function GetEventHandler(aEventType: TVKEventType): TEventHandler;
-    procedure SetEventHandler(aEventType: TVKEventType; aHandler: TEventHandler);
-    procedure SetEventHandler(const aEventType: String; AValue: TEventHandler);
+    function GetEventHandlerByName(const aEventType: String): TEventHandler;
+    function GetEventHandlerByEnum(aEventType: TVKEventType): TEventHandler;
+    procedure SetEventHandlerByEnum(aEventType: TVKEventType; aHandler: TEventHandler);
+    procedure SetEventHandlerByName(const aEventType: String; aHandler: TEventHandler);
+
+    { Dispatch deeplink inside ProcessMessage.
+      Call if msg.Ref nonempty. Does not continues processing. }
+    procedure DispatchDeeplink(const aMsg: TVKMessage);
+
   protected
     function CreateHTTPClient: IHTTPClient; virtual;
     function GetHTTPClient: IHTTPClient;
@@ -118,17 +144,23 @@ type
     procedure ProcessUpdate(const aUpdate: TJSONObject);
 
     { API methods }
-    function SendMessage(aPeerID: Int64; const aText: string; const aKeyboard: string = ''): Boolean;
+    function SendMessage(aPeerID: Int64; const aText: string;
+      const aKeyboard: string = ''): Boolean;
 
-    { Testing support: inject custom HTTP client (optional) }
+    { Testing support: inject custom HTTP client }
     procedure SetHTTPClient(aClient: IHTTPClient);
 
-    property Token: string read fToken;
-    property GroupID: Int64 read fGroupID;
+    property OnDeeplink: TDeeplinkHandler read fOnDeeplink write fOnDeeplink;
+
+    property Token:   string  read fToken;
+    property GroupID: Int64   read fGroupID;
     property Running: Boolean read fRunning;
+
     property CommandHandlers[const aCommand: string]: TCommandHandler read GetCommandHandler write SetCommandHandler;
-    property EventHandlers[aEventType: TVKEventType]: TEventHandler read GetEventHandler write SetEventHandler;
-    property EventHandlersByName[const aEventType: String]: TEventHandler read GetEventHandler write SetEventHandler;
+    property EventHandlers[aEventType: TVKEventType]: TEventHandler
+      read GetEventHandlerByEnum write SetEventHandlerByEnum;
+    property EventHandlersByName[const aEventType: String]: TEventHandler
+      read GetEventHandlerByName write SetEventHandlerByName;
     property MessageHandlers: THandlerList read fMessageHandlers;
     property OnLog: TOnLogEvent read fOnLog write fOnLog;
   end;
@@ -152,7 +184,7 @@ type
     function Build: string;
 
     property OneTime: Boolean read fOneTime write fOneTime;
-    property Inline: Boolean read fInline write fInline;
+    property Inline:  Boolean read fInline  write fInline;
   end;
 
 implementation
@@ -163,48 +195,39 @@ uses
 
 type
   { Standard HTTP client implementation }
-  TStandardHTTPClient = class(TInterfacedObject, IHTTPClient)
+
+  { TStandardHTTPClient }
+
+  TStandardHTTPClient = class(TObject, IHTTPClient)
   private
-    FClient: TFPHTTPClient;
+    fClient: TFPHTTPClient;
   public
     constructor Create;
     destructor Destroy; override;
     function Get(const AURL: string): string;
+    function GetObject: TObject;
   end;
-
-{ TStandardHTTPClient }
 
 constructor TStandardHTTPClient.Create;
 begin
   inherited Create;
-  FClient := TFPHTTPClient.Create(nil);
+  fClient := TFPHTTPClient.Create(nil);
 end;
 
 destructor TStandardHTTPClient.Destroy;
 begin
-  FClient.Free;
+  fClient.Free;
   inherited;
 end;
 
 function TStandardHTTPClient.Get(const AURL: string): string;
 begin
-  Result := FClient.Get(AURL);
+  Result := fClient.Get(AURL);
 end;
 
-function EncodeURLParams(aParams: TStringList): string;
-var
-  i: Integer;
-  aEncoded: TStringList;
+function TStandardHTTPClient.GetObject: TObject;
 begin
-  aEncoded := TStringList.Create;
-  aEncoded.Delimiter := '&';
-  try
-    for i := 0 to aParams.Count - 1 do
-      aEncoded.AddPair(aParams.Names[i], EncodeURLElement(aParams.ValueFromIndex[i]));
-    Result := aEncoded.DelimitedText;
-  finally
-    aEncoded.Free;
-  end;
+  Result:=Self;
 end;
 
 { TVKMessage }
@@ -212,7 +235,7 @@ end;
 constructor TVKMessage.Create(aBot: TVKBot; aData: TJSONObject);
 begin
   inherited Create;
-  fBot := aBot;
+  fBot  := aBot;
   fData := aData;
 end;
 
@@ -236,14 +259,27 @@ begin
   Result := fData.Get('payload', EmptyStr);
 end;
 
+function TVKMessage.GetRef: string;
+begin
+  Result := fData.Get('ref', EmptyStr);
+end;
+
+function TVKMessage.GetRefSource: string;
+begin
+  Result := fData.Get('ref_source', EmptyStr);
+end;
+
 procedure TVKMessage.Reply(const aText: string; const aKeyboard: string = '');
 begin
   Send(aText, PeerID, aKeyboard);
 end;
 
-procedure TVKMessage.Send(const aText: string; aPeerID: Int64 = 0; const aKeyboard: string = '');
+procedure TVKMessage.Send(const aText: string; aPeerID: Int64 = 0;
+  const aKeyboard: string = '');
 begin
-  fBot.SendMessage(specialize IfThen<Int64>(aPeerID = 0, PeerID, aPeerID), aText, aKeyboard);
+  fBot.SendMessage(
+    specialize IfThen<Int64>(aPeerID = 0, PeerID, aPeerID),
+    aText, aKeyboard);
 end;
 
 { TStringHash }
@@ -270,17 +306,14 @@ end;
 constructor TVKBot.Create(const aToken: string; aGroupID: Int64);
 begin
   inherited Create;
-  fToken := aToken;
-  fGroupID := aGroupID;
+  fToken      := aToken;
+  fGroupID    := aGroupID;
   fAPIVersion := VK_API_VERSION;
-  fRunning := False;
+  fRunning    := False;
 
-  fCommands := TCommandMap.Create;
+  fCommands        := TCommandMap.Create;
   fMessageHandlers := THandlerList.Create;
-  fEventHandlers := TEventMap.Create;
-
-  { Note: HTTP client is now created on-demand in GetHTTPClient, not stored as a field }
-  { fHTTPClient is kept only for optional dependency injection via SetHTTPClient }
+  fEventHandlers   := TEventMap.Create;
 end;
 
 destructor TVKBot.Destroy;
@@ -290,6 +323,7 @@ begin
   fMessageHandlers.Free;
   fEventHandlers.Free;
   fJSON.Free;
+  fHTTPClient.GetObject.Free;
   inherited;
 end;
 
@@ -305,11 +339,9 @@ end;
 
 function TVKBot.GetHTTPClient: IHTTPClient;
 begin
-  { If a custom client was injected via SetHTTPClient, use it }
   if Assigned(fHTTPClient) then
     Result := fHTTPClient
   else
-    { Otherwise create a new temporary client for this call }
     Result := CreateHTTPClient;
 end;
 
@@ -320,9 +352,8 @@ end;
 
 function TVKBot.APICall(const aMethod: string; const aParams: TJSONObject): TJSONData;
 var
-  aURL: string;
+  aURL, aResponse: string;
   i: Integer;
-  aParamStr, aResponse: string;
   aHTTPClient: IHTTPClient;
   aIsTemporary: Boolean;
 begin
@@ -330,20 +361,13 @@ begin
 
   aURL := Format('%s%s?access_token=%s&v=%s',
     [VK_BASE_API_URL, aMethod, fToken, fAPIVersion]);
-  aParamStr := EmptyStr;
 
   if Assigned(aParams) then
-  begin
     for i := 0 to aParams.Count - 1 do
-      aParamStr += Format('&%s=%s',
-        [aParams.Names[i], EncodeURLElement(aParams.Items[i].AsString)]);
-    aURL += aParamStr;
-  end;
+      aURL += Format('&%s=%s', [aParams.Names[i], EncodeURLElement(aParams.Items[i].AsString)]);
 
-  { Get HTTP client - either injected or create new temporary instance }
-  aHTTPClient := GetHTTPClient;
+  aHTTPClient  := GetHTTPClient; 
   aIsTemporary := not Assigned(fHTTPClient);
-
   try
     FreeAndNil(fJSON);
     aResponse := aHTTPClient.Get(aURL);
@@ -357,7 +381,7 @@ begin
   finally
     { If we created a temporary client (not injected), release reference }
     if aIsTemporary then
-      aHTTPClient := nil;
+      aHTTPClient.GetObject.Free;
   end;
 end;
 
@@ -367,40 +391,44 @@ begin
     fOnLog(aLogLevel, aMessage);
 end;
 
+{ --- Command handlers --- }
+
 function TVKBot.GetCommandHandler(const aCommand: string): TCommandHandler;
 var
-  aLowerCommand: string;
+  aLower: string;
 begin
-  aLowerCommand := LowerCase(aCommand);
-  if fCommands.Contains(aLowerCommand) then
-    Result := fCommands[aLowerCommand]
-  else
-    Result := nil;
-end;
-
-function TVKBot.GetEventHandler(const aEventType: String): TEventHandler;
-var
-  aEvent: TVKEventType;
-begin
-  aEvent:=VKEventTypeFromString(aEventType);
-  if fEventHandlers.Contains(aEvent) then
-    Result := fEventHandlers[aEvent]
+  aLower := LowerCase(aCommand);
+  if fCommands.Contains(aLower) then
+    Result := fCommands[aLower]
   else
     Result := nil;
 end;
 
 procedure TVKBot.SetCommandHandler(const aCommand: string; aHandler: TCommandHandler);
 var
-  aLowerCommand: string;
+  aLower: string;
 begin
-  aLowerCommand := LowerCase(aCommand);
+  aLower := LowerCase(aCommand);
   if Assigned(aHandler) then
-    fCommands[aLowerCommand] := aHandler
+    fCommands[aLower] := aHandler
   else
-    fCommands.Delete(aLowerCommand);
+    fCommands.Delete(aLower);
 end;
 
-function TVKBot.GetEventHandler(aEventType: TVKEventType): TEventHandler;
+{ --- Event handlers --- }
+
+function TVKBot.GetEventHandlerByName(const aEventType: String): TEventHandler;
+var
+  aEvent: TVKEventType;
+begin
+  aEvent := VKEventTypeFromString(aEventType);
+  if fEventHandlers.Contains(aEvent) then
+    Result := fEventHandlers[aEvent]
+  else
+    Result := nil;
+end;
+
+function TVKBot.GetEventHandlerByEnum(aEventType: TVKEventType): TEventHandler;
 begin
   if fEventHandlers.Contains(aEventType) then
     Result := fEventHandlers[aEventType]
@@ -408,7 +436,7 @@ begin
     Result := nil;
 end;
 
-procedure TVKBot.SetEventHandler(aEventType: TVKEventType; aHandler: TEventHandler);
+procedure TVKBot.SetEventHandlerByEnum(aEventType: TVKEventType; aHandler: TEventHandler);
 begin
   if Assigned(aHandler) then
     fEventHandlers[aEventType] := aHandler
@@ -416,15 +444,34 @@ begin
     fEventHandlers.Delete(aEventType);
 end;
 
-procedure TVKBot.SetEventHandler(const aEventType: String; AValue: TEventHandler);
+procedure TVKBot.SetEventHandlerByName(const aEventType: String; aHandler: TEventHandler);
 var
   aEvent: TVKEventType;
 begin
-  aEvent:=VKEventTypeFromString(aEventType);
-  if Assigned(AValue) then
-    fEventHandlers[aEvent]:=AValue
+  aEvent := VKEventTypeFromString(aEventType);
+  if Assigned(aHandler) then
+    fEventHandlers[aEvent] := aHandler
   else
     fEventHandlers.Delete(aEvent);
+end;
+
+{ --- Deeplink handlers --- }
+
+procedure TVKBot.DispatchDeeplink(const aMsg: TVKMessage);
+var
+  aRef, aRefSource: string;
+begin
+  aRef       := aMsg.Ref;
+  aRefSource := aMsg.RefSource;
+
+  if Assigned(fOnDeeplink) then
+  begin
+    DoLog(llInfo, Format('Deeplink: ref="%s" ref_source="%s" from user %d', [aRef, aRefSource, aMsg.FromID]));
+    fOnDeeplink(aMsg, aRef, aRefSource);
+    Exit;
+  end;
+
+  DoLog(llDebug, Format('Deeplink: нет обработчика для ref="%s"', [aRef]));
 end;
 
 procedure TVKBot.InitLongPoll;
@@ -436,13 +483,11 @@ begin
   try
     aParams.Add('group_id', fGroupID);
     aResponse := APICall('groups.getLongPollServer', aParams) as TJSONObject;
-
     if Assigned(aResponse) then
     begin
       fServer := aResponse.Get('server', EmptyStr);
-      fKey := aResponse.Get('key', EmptyStr);
-      fTS := aResponse.Get('ts', Int64(0));
-
+      fKey    := aResponse.Get('key',    EmptyStr);
+      fTS     := aResponse.Get('ts',     Int64(0));
       DoLog(llDebug, Format('LongPoll initialized: server=%s, ts=%d', [fServer, fTS]));
     end;
   finally
@@ -458,7 +503,7 @@ var
   aEventTypeStr: TJSONStringType;
 begin
   aEventTypeStr := aUpdate.Get('type', EmptyStr);
-  aEventObject := aUpdate.Get('object', TJSONObject(nil));
+  aEventObject  := aUpdate.Get('object', TJSONObject(nil));
 
   if not Assigned(aEventObject) then
     Exit;
@@ -490,7 +535,7 @@ var
   aPayloadJSON: TJSONObject;
   aCommand: string;
   aParts: TStringArray;
-  aHandler: TCommandHandler;
+  aCmdHandler: TCommandHandler;
   aMsgHandler: TMessageHandler;
   aArgs: TStringArray;
   i: Integer;
@@ -499,7 +544,14 @@ begin
 
   aMsg := TVKMessage.Create(Self, aMessage);
   try
-    { Check payload for button CommandMap }
+    { --- Deeplink: if the message is received via vk.me?ref=... ---
+    We call the deeplink handler FIRST, but DO NOT interrupt the pipeline:
+          the message continues to be processed as usual (commands, handlers).
+          This allows, for example, to activate a referral and at the same time
+          run the /start command. }
+    if not aMsg.Ref.IsEmpty then
+      DispatchDeeplink(aMsg);
+
     aPayloadStr := aMsg.GetPayload;
     if aPayloadStr <> '' then
     begin
@@ -507,19 +559,17 @@ begin
       if Assigned(aPayloadJSON) then
       begin
         aCommand := LowerCase(aPayloadJSON.Get('command', EmptyStr));
-        if (aCommand <> '') then
-          if fCommands.GetValue(aCommand, aHandler) then
-          begin
-            aHandler(aMsg, []);
-            DoLog(llInfo, Format('Button command executed: %s by user %d', [aCommand, aMsg.FromID]));
-            aPayloadJSON.Free;
-            Exit;
-          end;
+        if (aCommand <> '') and fCommands.GetValue(aCommand, aCmdHandler) then
+        begin
+          aCmdHandler(aMsg, []);
+          DoLog(llInfo, Format('Button command: %s by user %d', [aCommand, aMsg.FromID]));
+          aPayloadJSON.Free;
+          Exit;
+        end;
         aPayloadJSON.Free;
       end;
     end;
 
-    { Check text for slash CommandMap }
     aText := Trim(aMsg.Text);
     if (Length(aText) > 0) and (aText[1] = '/') then
     begin
@@ -529,25 +579,25 @@ begin
         aCommand := LowerCase(Copy(aParts[0], 2, MaxInt));
         if fCommands.Contains(aCommand) then
         begin
-          aHandler := fCommands[aCommand];
+          aCmdHandler := fCommands[aCommand];
           if Length(aParts) > 1 then
             aArgs := Copy(aParts, 1, Length(aParts) - 1)
           else
             SetLength(aArgs, 0);
-          aHandler(aMsg, aArgs);
-          DoLog(llInfo, Format('Text command executed: /%s by user %d', [aCommand, aMsg.FromID]));
+          aCmdHandler(aMsg, aArgs);
+          DoLog(llInfo, Format('Text command: /%s by user %d', [aCommand, aMsg.FromID]));
           Exit;
         end;
       end;
     end;
 
-    { Call general message handlers }
     if fMessageHandlers.Size > 0 then
       for i := 0 to fMessageHandlers.Size - 1 do
       begin
         aMsgHandler := fMessageHandlers[i];
         aMsgHandler(aMsg);
       end;
+
   finally
     aMsg.Free;
   end;
@@ -560,9 +610,9 @@ var
   aUpdates: TJSONArray;
   i: Integer;
   aHTTPClient: IHTTPClient;
+  aIsTemporary: Boolean;
 begin
-  if fRunning then
-    Exit;
+  if fRunning then Exit;
 
   if fGroupID = 0 then
     raise Exception.Create('GroupID is required for LongPoll mode');
@@ -572,67 +622,61 @@ begin
   fRunning := True;
   DoLog(llInfo, Format('Bot started. GroupID: %d, API v%s', [fGroupID, fAPIVersion]));
 
-  { Create or get HTTP client for the polling loop }
   aHTTPClient := GetHTTPClient;
+  aIsTemporary := not Assigned(fHTTPClient);
+  try
+    while fRunning do
+    begin
+      try
+        aURL := Format('%s?act=a_check&key=%s&ts=%d&wait=%d', [fServer, fKey, fTS, VK_LONG_POLL_WAIT]);
 
-  while fRunning do
-  begin
-    try
-      aURL := Format('%s?act=a_check&key=%s&ts=%d&wait=%d',
-        [fServer, fKey, fTS, VK_LONG_POLL_WAIT]);
+        aResponse := aHTTPClient.Get(aURL);
+        aJSON     := GetJSON(aResponse);
 
-      aResponse := aHTTPClient.Get(aURL);
-      aJSON := GetJSON(aResponse);
-
-      if aJSON is TJSONObject then
-      begin
-        fTS := TJSONObject(aJSON).Int64s['ts'];
-        aUpdates := TJSONObject(aJSON).Get('updates', TJSONArray(nil));
-
-        if Assigned(aUpdates) then
+        if aJSON is TJSONObject then
         begin
-          for i := 0 to aUpdates.Count - 1 do
-            if aUpdates[i] is TJSONObject then
-              ProcessUpdate(TJSONObject(aUpdates[i]));
+          fTS      := TJSONObject(aJSON).Int64s['ts'];
+          aUpdates := TJSONObject(aJSON).Get('updates', TJSONArray(nil));
+          if Assigned(aUpdates) then
+            for i := 0 to aUpdates.Count - 1 do
+              if aUpdates[i] is TJSONObject then
+                ProcessUpdate(TJSONObject(aUpdates[i]));
+        end;
+
+        aJSON.Free;
+      except
+        on E: Exception do
+        begin
+          DoLog(llError, Format('LongPoll error: %s', [E.Message]));
+          Sleep(1000);
+          InitLongPoll;
         end;
       end;
-
-      aJSON.Free;
-    except
-      on E: Exception do
-      begin
-        DoLog(llError, Format('LongPoll error: %s', [E.Message]));
-        Sleep(1000);
-        InitLongPoll;
-      end;
     end;
+  finally
+    if aIsTemporary then
+      aHTTPClient.GetObject.Free;
   end;
 end;
 
 procedure TVKBot.Stop;
 begin
   fRunning := False;
-  DoLog(llInfo, 'Bot stopped');
 end;
 
 function TVKBot.SendMessage(aPeerID: Int64; const aText: string;
   const aKeyboard: string = ''): Boolean;
 var
   aParams: TJSONObject;
-  aRandomID: Int64;
 begin
-  Result := False;
+  Result  := False;
   aParams := TJSONObject.Create;
   try
-    aRandomID := DateTimeToUnix(Now) * 1000 + Random(1000);
-
-    aParams.Add('peer_id', aPeerID);
-    aParams.Add('message', aText);
-    aParams.Add('random_id', aRandomID);
-
+    aParams.Add('peer_id',   aPeerID);
+    aParams.Add('message',   aText);
+    aParams.Add('random_id', DateTimeToUnix(Now) * 1000 + Random(1000));
     if aKeyboard <> '' then
       aParams.Add('keyboard', aKeyboard);
-
     Result := Assigned(APICall('messages.send', aParams));
   finally
     aParams.Free;
@@ -646,8 +690,8 @@ begin
   inherited Create;
   fButtons := TJSONArray.Create;
   fOneTime := aOneTime;
-  fInline := aInline;
-  AddRow; // Start with first row
+  fInline  := aInline;
+  AddRow;
 end;
 
 destructor TVKKeyboard.Destroy;
@@ -656,28 +700,23 @@ begin
   inherited;
 end;
 
-function TVKKeyboard.AddButton(const aLabel: string; aColor: TVKButtonColor = bcSecondary;
-  const aPayload: string = ''): TVKKeyboard;
+function TVKKeyboard.AddButton(const aLabel: string;
+  aColor: TVKButtonColor = bcSecondary; const aPayload: string = ''): TVKKeyboard;
 var
   aCurrentRow: TJSONArray;
   aButton, aAction: TJSONObject;
 begin
-  if fButtons.Count = 0 then
-    AddRow;
-
+  if fButtons.Count = 0 then AddRow;
   aCurrentRow := fButtons.Items[fButtons.Count - 1] as TJSONArray;
 
   aButton := TJSONObject.Create;
   aAction := TJSONObject.Create;
-
   aAction.Add('type', 'text');
   aAction.Add('label', aLabel);
   if aPayload <> '' then
     aAction.Add('payload', aPayload);
-
   aButton.Add('action', aAction);
   aButton.Add('color', VKButtonColorToString(aColor));
-
   aCurrentRow.Add(aButton);
   Result := Self;
 end;
@@ -695,8 +734,8 @@ begin
   aKeyboard := TJSONObject.Create;
   try
     aKeyboard.Add('one_time', fOneTime);
-    aKeyboard.Add('inline', fInline);
-    aKeyboard.Add('buttons', fButtons.Clone);
+    aKeyboard.Add('inline',   fInline);
+    aKeyboard.Add('buttons',  fButtons.Clone);
     Result := aKeyboard.AsJSON;
   finally
     aKeyboard.Free;
@@ -704,4 +743,3 @@ begin
 end;
 
 end.
-

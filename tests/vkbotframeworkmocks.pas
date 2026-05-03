@@ -1,6 +1,6 @@
-{$mode objfpc}{$H+}{$J-}
-
 unit VKBotFrameworkMocks;
+
+{$mode objfpc}{$H+}{$J-}
 
 interface
 
@@ -10,7 +10,10 @@ uses
 
 type
   { Mock HTTP Client для тестирования }
-  TMockHTTPClient = class(TInterfacedObject, IHTTPClient)
+
+  { TMockHTTPClient }
+
+  TMockHTTPClient = class(TObject, IHTTPClient)
   private
     type
       TURLResponse = record
@@ -37,6 +40,7 @@ type
     procedure ClearCalls;
     function WasCalled(const aURLPattern: string): Boolean;
     function GetLastURL: string;
+    function GetObject: TObject;
   end;
 
   { Mock Bot: extended testing }
@@ -140,6 +144,11 @@ begin
     Result := fCallLog[fCallLog.Count - 1]
   else
     Result := EmptyStr;
+end;
+
+function TMockHTTPClient.GetObject: TObject;
+begin
+  Result:=Self;
 end;
 
 { TMockVKBot }

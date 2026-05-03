@@ -134,6 +134,11 @@
         <IsPartOfProject Value="True"/>
         <UnitName Value="VKWebhookTests"/>
       </Unit>
+      <Unit>
+        <Filename Value="vkdeeplinktests.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="VKDeeplinkTests"/>
+      </Unit>
     </Units>
   </ProjectOptions>
   <CompilerOptions>
@@ -171,6 +176,9 @@
       </Item>
       <Item>
         <Name Value="EJSONParser"/>
+      </Item>
+      <Item>
+        <Name Value="EArgumentException"/>
       </Item>
     </Exceptions>
   </Debugging>
