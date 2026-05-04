@@ -20,7 +20,7 @@ type
     etMessageReply,
     etMessageEdit,
     etMessageTypingState,
-    erMessageEvent,
+    etMessageEvent,
     etPhotoNew,
     etPhotoCommentNew,
     etPhotoCommentEdit,
@@ -186,7 +186,7 @@ begin
     'message_reply':         Result := etMessageReply;
     'message_edit':          Result := etMessageEdit;
     'message_typing_state':  Result := etMessageTypingState;
-    'message_event':         Result := erMessageEvent;
+    'message_event':         Result := etMessageEvent;
     'photo_new':             Result := etPhotoNew;
     'photo_comment_new':     Result := etPhotoCommentNew;
     'photo_comment_edit':    Result := etPhotoCommentEdit;
