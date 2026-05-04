@@ -20,6 +20,7 @@ type
     etMessageReply,
     etMessageEdit,
     etMessageTypingState,
+    erMessageEvent,
     etPhotoNew,
     etPhotoCommentNew,
     etPhotoCommentEdit,
@@ -185,6 +186,7 @@ begin
     'message_reply':         Result := etMessageReply;
     'message_edit':          Result := etMessageEdit;
     'message_typing_state':  Result := etMessageTypingState;
+    'message_event':         Result := erMessageEvent;
     'photo_new':             Result := etPhotoNew;
     'photo_comment_new':     Result := etPhotoCommentNew;
     'photo_comment_edit':    Result := etPhotoCommentEdit;
@@ -227,7 +229,7 @@ function VKEventTypeToString(aType: TVKEventType): string;
 const
   aNames: array[TVKEventType] of string = (
     'unknown',
-    'message_new', 'message_reply', 'message_edit', 'message_typing_state',
+    'message_new', 'message_reply', 'message_edit', 'message_typing_state', 'message_event',
     'photo_new', 'photo_comment_new', 'photo_comment_edit',
     'photo_comment_restore', 'photo_comment_delete',
     'audio_new',
