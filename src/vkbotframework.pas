@@ -1,12 +1,11 @@
 unit VKBotFramework;
 
 {$mode objfpc}{$H+}{$J-}
-{$Interfaces CORBA}
 
 interface
 
 uses
-  SysUtils, Classes, fphttpclient, fpjson, jsonparser, ghashmap, gvector, VKTypes
+  SysUtils, Classes, fphttpclient, fpjson, jsonparser, ghashmap, gvector, VKTypes, vkbasehttpclient
   ;
 
 type
@@ -24,14 +23,6 @@ type
     aRef       — ref parameter value from link.
     aRefSource — ref_source parameter value (empty, if not passed). }
   TDeeplinkHandler = procedure(const aMsg: TVKMessage; const aRef, aRefSource: string) of object;
-
-  { IHTTPClient }
-  { HTTP Client abstraction for testing }
-  IHTTPClient = interface
-    ['{8F3C9A2E-1B4D-4E5F-9C8A-7D6E5F4A3B2C}']
-    function Get(const aURL: string): string;
-    function GetObject: TObject;
-  end;
 
   { TVKMessage }
 
@@ -105,7 +96,6 @@ type
     fServer: string;
     fKey: string;
     fTS: Int64;
-    fHTTPClient: IHTTPClient; // for injected HTTPClient cases ( mock client)
     fOnLog: TOnLogEvent;
 
     procedure InitLongPoll;
@@ -124,8 +114,6 @@ type
     procedure DispatchDeeplink(const aMsg: TVKMessage);
 
   protected
-    function CreateHTTPClient: IHTTPClient; virtual;
-    function GetHTTPClient: IHTTPClient;
     procedure ProcessMessage(const aMessage: TJSONObject);
     property RawJSON: TJSONData read fJSON write fJSON;
     property EventMap: TEventMap read fEventHandlers;
@@ -144,11 +132,7 @@ type
     procedure ProcessUpdate(const aUpdate: TJSONObject);
 
     { API methods }
-    function SendMessage(aPeerID: Int64; const aText: string;
-      const aKeyboard: string = ''): Boolean;
-
-    { Testing support: inject custom HTTP client }
-    procedure SetHTTPClient(aClient: IHTTPClient);
+    function SendMessage(aPeerID: Int64; const aText: string; const aKeyboard: string = ''): Boolean;
 
     property OnDeeplink: TDeeplinkHandler read fOnDeeplink write fOnDeeplink;
 
@@ -190,45 +174,8 @@ type
 implementation
 
 uses
-  DateUtils, opensslsockets
+  DateUtils, opensslsockets, VKFCLHTTPClient
   ;
-
-type
-  { Standard HTTP client implementation }
-
-  { TStandardHTTPClient }
-
-  TStandardHTTPClient = class(TObject, IHTTPClient)
-  private
-    fClient: TFPHTTPClient;
-  public
-    constructor Create;
-    destructor Destroy; override;
-    function Get(const AURL: string): string;
-    function GetObject: TObject;
-  end;
-
-constructor TStandardHTTPClient.Create;
-begin
-  inherited Create;
-  fClient := TFPHTTPClient.Create(nil);
-end;
-
-destructor TStandardHTTPClient.Destroy;
-begin
-  fClient.Free;
-  inherited;
-end;
-
-function TStandardHTTPClient.Get(const AURL: string): string;
-begin
-  Result := fClient.Get(AURL);
-end;
-
-function TStandardHTTPClient.GetObject: TObject;
-begin
-  Result:=Self;
-end;
 
 { TVKMessage }
 
@@ -277,9 +224,7 @@ end;
 procedure TVKMessage.Send(const aText: string; aPeerID: Int64 = 0;
   const aKeyboard: string = '');
 begin
-  fBot.SendMessage(
-    specialize IfThen<Int64>(aPeerID = 0, PeerID, aPeerID),
-    aText, aKeyboard);
+  fBot.SendMessage(specialize IfThen<Int64>(aPeerID = 0, PeerID, aPeerID), aText, aKeyboard);
 end;
 
 { TStringHash }
@@ -323,7 +268,6 @@ begin
   fMessageHandlers.Free;
   fEventHandlers.Free;
   fJSON.Free;
-  fHTTPClient.GetObject.Free;
   inherited;
 end;
 
@@ -332,42 +276,21 @@ begin
   fMessageHandlers.PushBack(aHandler);
 end;
 
-function TVKBot.CreateHTTPClient: IHTTPClient;
-begin
-  Result := TStandardHTTPClient.Create;
-end;
-
-function TVKBot.GetHTTPClient: IHTTPClient;
-begin
-  if Assigned(fHTTPClient) then
-    Result := fHTTPClient
-  else
-    Result := CreateHTTPClient;
-end;
-
-procedure TVKBot.SetHTTPClient(aClient: IHTTPClient);
-begin
-  fHTTPClient := aClient;
-end;
-
 function TVKBot.APICall(const aMethod: string; const aParams: TJSONObject): TJSONData;
 var
   aURL, aResponse: string;
   i: Integer;
-  aHTTPClient: IHTTPClient;
-  aIsTemporary: Boolean;
+  aHTTPClient: TBaseHTTPClient;
 begin
   Result := nil;
 
-  aURL := Format('%s%s?access_token=%s&v=%s',
-    [VK_BASE_API_URL, aMethod, fToken, fAPIVersion]);
+  aURL := Format('%s%s?access_token=%s&v=%s', [VK_BASE_API_URL, aMethod, fToken, fAPIVersion]);
 
   if Assigned(aParams) then
     for i := 0 to aParams.Count - 1 do
       aURL += Format('&%s=%s', [aParams.Names[i], EncodeURLElement(aParams.Items[i].AsString)]);
 
-  aHTTPClient  := GetHTTPClient; 
-  aIsTemporary := not Assigned(fHTTPClient);
+  aHTTPClient  := TBaseHTTPClient.GetClientClass.Create(nil);
   try
     FreeAndNil(fJSON);
     aResponse := aHTTPClient.Get(aURL);
@@ -379,9 +302,7 @@ begin
     if not Assigned(Result) then
       DoLog(llError, Format('API call failed: %s, response: %s', [aMethod, aResponse]));
   finally
-    { If we created a temporary client (not injected), release reference }
-    if aIsTemporary then
-      aHTTPClient.GetObject.Free;
+    aHTTPClient.Free;
   end;
 end;
 
@@ -516,7 +437,8 @@ begin
     Exit;
   end;
 
-  DoLog(llDebug, Format('Processing event: type=%s', [VKEventTypeToString(aEventType)]));
+  DoLog(llDebug, Format('Processing event: type=%s', [VKEventTypeToString(aEventType)])); 
+  DoLog(llDebug, 'JSON: '+aUpdate.AsJSON);
 
   if aEventType = etMessageNew then
     ProcessMessage(aEventObject.Get('message', TJSONObject(nil)))
@@ -609,8 +531,7 @@ var
   aJSON: TJSONData;
   aUpdates: TJSONArray;
   i: Integer;
-  aHTTPClient: IHTTPClient;
-  aIsTemporary: Boolean;
+  aHTTPClient: TBaseHTTPClient;
 begin
   if fRunning then Exit;
 
@@ -622,8 +543,7 @@ begin
   fRunning := True;
   DoLog(llInfo, Format('Bot started. GroupID: %d, API v%s', [fGroupID, fAPIVersion]));
 
-  aHTTPClient := GetHTTPClient;
-  aIsTemporary := not Assigned(fHTTPClient);
+  aHTTPClient := TBaseHTTPClient.GetClientClass.Create(nil);
   try
     while fRunning do
     begin
@@ -654,8 +574,7 @@ begin
       end;
     end;
   finally
-    if aIsTemporary then
-      aHTTPClient.GetObject.Free;
+    aHTTPClient.Free;
   end;
 end;
 

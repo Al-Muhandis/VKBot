@@ -5,7 +5,7 @@ unit VKBotFrameworkMocks;
 interface
 
 uses
-  Classes, SysUtils, fpjson, jsonparser, VKBotFramework, gvector
+  Classes, SysUtils, fpjson, jsonparser, VKBotFramework, gvector, vkbasehttpclient
   ;
 
 type
@@ -13,7 +13,7 @@ type
 
   { TMockHTTPClient }
 
-  TMockHTTPClient = class(TObject, IHTTPClient)
+  TMockHTTPClient = class(TBaseHTTPClient)
   private
     type
       TURLResponse = record
@@ -22,36 +22,29 @@ type
       end;
       TURLResponseVector = specialize TVector<TURLResponse>;
     var
-    fResponses: TURLResponseVector;
-    fCallLog: TStringList;
-    fDefaultResponse: string;
+    class var fResponses: TURLResponseVector;
+    class var fCallLog: TStringList;
+    class var fDefaultResponse: string;
+    class procedure FreeCallStorage;
   public
-    constructor Create;
-    destructor Destroy; override;
+    function Get(const aURL: string): string; override;
 
-    { IHTTPClient }
-    function Get(const aURL: string): string;
+    class procedure InitiateCallStorage;
 
     { Mock control methods }
-    procedure AddResponse(const aURLPattern: string; const aResponseStr: string);
-    procedure SetDefaultResponse(const aResponse: string);
-    function GetCallCount: Integer;
-    function GetCall(aIndex: Integer): string;
-    procedure ClearCalls;
-    function WasCalled(const aURLPattern: string): Boolean;
-    function GetLastURL: string;
-    function GetObject: TObject;
+    class procedure AddResponse(const aURLPattern: string; const aResponseStr: string);
+    class procedure SetDefaultResponse(const aResponse: string);
+    class function GetCallCount: Integer;
+    class function GetCall(aIndex: Integer): string;
+    class procedure ClearCalls;
+    class function WasCalled(const aURLPattern: string): Boolean;
+    class function GetLastURL: string;
   end;
 
   { Mock Bot: extended testing }
   TMockVKBot = class(TVKBot)
-  private
-    fMockClient: TMockHTTPClient;
-  protected
-    function CreateHTTPClient: IHTTPClient; override;
   public
     constructor Create(const aToken: string; aGroupID: Int64);
-    property MockClient: TMockHTTPClient read fMockClient;
     property RawJSON;
   end;
 
@@ -59,19 +52,10 @@ implementation
 
 { TMockHTTPClient }
 
-constructor TMockHTTPClient.Create;
+class procedure TMockHTTPClient.FreeCallStorage;
 begin
-  inherited Create;
-  fResponses := TURLResponseVector.Create;
-  fCallLog := TStringList.Create;
-  fDefaultResponse := '{"response":{}}';
-end;
-
-destructor TMockHTTPClient.Destroy;
-begin
-  fResponses.Free;
-  fCallLog.Free;
-  inherited;
+  fResponses.Clear;
+  fCallLog.Clear;
 end;
 
 function TMockHTTPClient.Get(const aURL: string): string;
@@ -96,7 +80,7 @@ begin
   Result := fDefaultResponse;
 end;
 
-procedure TMockHTTPClient.AddResponse(const aURLPattern: string; const aResponseStr: string);
+class procedure TMockHTTPClient.AddResponse(const aURLPattern: string; const aResponseStr: string);
 var
   aResponse: TURLResponse;
 begin
@@ -105,17 +89,17 @@ begin
   fResponses.PushBack(aResponse);
 end;
 
-procedure TMockHTTPClient.SetDefaultResponse(const aResponse: string);
+class procedure TMockHTTPClient.SetDefaultResponse(const aResponse: string);
 begin
   fDefaultResponse := aResponse;
 end;
 
-function TMockHTTPClient.GetCallCount: Integer;
+class function TMockHTTPClient.GetCallCount: Integer;
 begin
   Result := fCallLog.Count;
 end;
 
-function TMockHTTPClient.GetCall(aIndex: Integer): string;
+class function TMockHTTPClient.GetCall(aIndex: Integer): string;
 begin
   if (aIndex >= 0) and (aIndex < fCallLog.Count) then
     Result := fCallLog[aIndex]
@@ -123,12 +107,12 @@ begin
     Result := '';
 end;
 
-procedure TMockHTTPClient.ClearCalls;
+class procedure TMockHTTPClient.ClearCalls;
 begin
   fCallLog.Clear;
 end;
 
-function TMockHTTPClient.WasCalled(const aURLPattern: string): Boolean;
+class function TMockHTTPClient.WasCalled(const aURLPattern: string): Boolean;
 var
   i: Integer;
 begin
@@ -138,7 +122,7 @@ begin
       Exit(True)
 end;
 
-function TMockHTTPClient.GetLastURL: string;
+class function TMockHTTPClient.GetLastURL: string;
 begin
   if fCallLog.Count > 0 then
     Result := fCallLog[fCallLog.Count - 1]
@@ -146,9 +130,10 @@ begin
     Result := EmptyStr;
 end;
 
-function TMockHTTPClient.GetObject: TObject;
+class procedure TMockHTTPClient.InitiateCallStorage;
 begin
-  Result:=Self;
+  FreeCallStorage;
+  fDefaultResponse := '{"response":{}}';
 end;
 
 { TMockVKBot }
@@ -156,13 +141,19 @@ end;
 constructor TMockVKBot.Create(const aToken: string; aGroupID: Int64);
 begin
   inherited Create(aToken, aGroupID);
-  fMockClient := TMockHTTPClient.Create;
-  SetHTTPClient(fMockClient);
+  TMockHTTPClient.UnregisterClientClass;
+  TMockHTTPClient.RegisterClientClass;
+  TMockHTTPClient.InitiateCallStorage;
 end;
 
-function TMockVKBot.CreateHTTPClient: IHTTPClient;
-begin
-  Result := nil;
-end;
+initialization
+
+  TMockHTTPClient.fCallLog:=TStringList.Create;
+  TMockHTTPClient.fResponses:=TMockHTTPClient.TURLResponseVector.Create;
+  TMockHTTPClient.fDefaultResponse:=EmptyStr;
+
+finalization
+  TMockHTTPClient.fResponses.Free;
+  TMockHTTPClient.fCallLog.Free;
 
 end.

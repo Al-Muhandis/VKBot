@@ -168,7 +168,7 @@ uses
 procedure TMessageTests.SetUp;
 begin
   fBot := TMockVKBot.Create('test_token', 123456);
-  fBot.MockClient.SetDefaultResponse('{"response":{"message_id":1}}');
+  TMockHTTPClient.SetDefaultResponse('{"response":{"message_id":1}}');
 
   fMsgData := TJSONObject.Create;
   fMsgData.Add('text', 'Hello, World!');
@@ -211,8 +211,8 @@ var
 begin
   fMessage.Reply('Reply text');
 
-  CheckTrue(fBot.MockClient.GetCallCount > 0, 'HTTP клиент должен быть вызван');
-  aLastURL := fBot.MockClient.GetLastURL;
+  CheckTrue(TMockHTTPClient.GetCallCount > 0, 'HTTP клиент должен быть вызван');
+  aLastURL := TMockHTTPClient.GetLastURL;
 
   // Проверяем, что Reply использует правильный PeerID
   CheckTrue(Pos('peer_id=987654', aLastURL) > 0, 'Reply должен использовать PeerID из сообщения');
@@ -225,18 +225,18 @@ var
 begin
   fMessage.Send('Test message', 555666);
 
-  aLastURL := fBot.MockClient.GetLastURL;
+  aLastURL := TMockHTTPClient.GetLastURL;
   CheckTrue(Pos('peer_id=555666', aLastURL) > 0, 'Send должен использовать явно указанный PeerID');
 end;
 
 procedure TMessageTests.TestReplySendsToCorrectPeer;
 begin
-  fBot.MockClient.ClearCalls;
+  TMockHTTPClient.ClearCalls;
 
   fMessage.Reply('Response');
 
-  CheckEquals(1, fBot.MockClient.GetCallCount, 'Должен быть один вызов');
-  CheckTrue(fBot.MockClient.WasCalled('peer_id=987654'), 'Должен отправить на правильный peer_id');
+  CheckEquals(1, TMockHTTPClient.GetCallCount, 'Должен быть один вызов');
+  CheckTrue(TMockHTTPClient.WasCalled('peer_id=987654'), 'Должен отправить на правильный peer_id');
 end;
 
 procedure TMessageTests.TestSendWithKeyboard;
@@ -249,7 +249,7 @@ begin
     aKB.AddButton('Test Button');
     fMessage.Send('Choose', 0, aKB.Build);
 
-    aLastURL := fBot.MockClient.GetLastURL;
+    aLastURL := TMockHTTPClient.GetLastURL;
     CheckTrue(Pos('keyboard=', aLastURL) > 0, 'Send должен передать клавиатуру');
   finally
     aKB.Free;
@@ -391,7 +391,7 @@ end;
 procedure TBotCommandTests.SetUp;
 begin
   fBot := TTestVKBot.Create('test_token', 123456);
-  fBot.MockClient.SetDefaultResponse('{"response":{"message_id":1}}');
+  TMockHTTPClient.SetDefaultResponse('{"response":{"message_id":1}}');
   fCommandCalled := False;
   fHandlerCalled := False;
   SetLength(fLastArgs, 0);
@@ -582,7 +582,7 @@ end;
 procedure TBotMessageHandlerTests.SetUp;
 begin
   fBot := TTestVKBot.Create('test_token', 123456);
-  fBot.MockClient.SetDefaultResponse('{"response":{"message_id":1}}');
+  TMockHTTPClient.SetDefaultResponse('{"response":{"message_id":1}}');
   fCmdCalled := False;
   fHandlerCalled := False;
   fReceivedPeerID := 0;
@@ -725,15 +725,15 @@ var
   aLastURL: string;
 begin
   // Настраиваем мок для ответа
-  fBot.MockClient.SetDefaultResponse('{"response":{"ok":true}}');
+  TMockHTTPClient.SetDefaultResponse('{"response":{"ok":true}}');
 
   // Делаем вызов
   fBot.SendMessage(12345, 'Test message');
 
   // Проверяем, что запрос был сделан
-  CheckTrue(fBot.MockClient.GetCallCount > 0, 'Должен быть хотя бы один HTTP вызов');
+  CheckTrue(TMockHTTPClient.GetCallCount > 0, 'Должен быть хотя бы один HTTP вызов');
 
-  aLastURL := fBot.MockClient.GetLastURL;
+  aLastURL := TMockHTTPClient.GetLastURL;
 
   // Проверяем формат URL
   CheckTrue(Pos('https://api.vk.com/method/', aLastURL) > 0, 'URL должен содержать базовый путь API');
@@ -746,11 +746,11 @@ procedure TAPICallTests.TestAPICallWithParams;
 var
   aLastURL: string;
 begin
-  fBot.MockClient.SetDefaultResponse('{"response":{"ok":true}}');
+  TMockHTTPClient.SetDefaultResponse('{"response":{"ok":true}}');
 
   fBot.SendMessage(67890, 'Hello, World!');
 
-  aLastURL := fBot.MockClient.GetLastURL;
+  aLastURL := TMockHTTPClient.GetLastURL;
 
   // Проверяем параметры в URL
   CheckTrue(Pos('peer_id=67890', aLastURL) > 0, 'URL должен содержать peer_id');
@@ -763,12 +763,12 @@ var
   aResult: Boolean;
 begin
   // Настраиваем успешный ответ
-  fBot.MockClient.AddResponse('messages.send', '{"response":1234}');
+  TMockHTTPClient.AddResponse('messages.send', '{"response":1234}');
 
   aResult := fBot.SendMessage(123, 'Test');
 
   CheckTrue(aResult, 'SendMessage должен вернуть True при успешном ответе');
-  CheckTrue(fBot.MockClient.WasCalled('messages.send'), 'Метод messages.send должен быть вызван');
+  CheckTrue(TMockHTTPClient.WasCalled('messages.send'), 'Метод messages.send должен быть вызван');
 end;
 
 procedure TAPICallTests.TestSendMessageWithKeyboard;
@@ -777,7 +777,7 @@ var
   aKeyboardJSON: string;
   aLastURL: string;
 begin
-  fBot.MockClient.SetDefaultResponse('{"response":5678}');
+  TMockHTTPClient.SetDefaultResponse('{"response":5678}');
 
   aKeyboard := TVKKeyboard.Create;
   try
@@ -786,7 +786,7 @@ begin
 
     fBot.SendMessage(999, 'Choose option', aKeyboardJSON);
 
-    aLastURL := fBot.MockClient.GetLastURL;
+    aLastURL := TMockHTTPClient.GetLastURL;
     CheckTrue(Pos('keyboard=', aLastURL) > 0, 'URL должен содержать параметр keyboard');
   finally
     aKeyboard.Free;
@@ -798,14 +798,14 @@ var
   aParams: TJSONObject;
 begin
   // Создаем JSON с ожидаемым ответом
-  fBot.MockClient.AddResponse('test.method', '{"response":{"user_id":12345,"name":"Test User"}}');
+  TMockHTTPClient.AddResponse('test.method', '{"response":{"user_id":12345,"name":"Test User"}}');
 
   aParams := TJSONObject.Create;
   try
     aParams.Add('test_param', 'value');
     fBot.SendMessage(111, 'test'); // Используем публичный метод
 
-    CheckTrue(fBot.MockClient.WasCalled('messages.send'), 'API должен быть вызван');
+    CheckTrue(TMockHTTPClient.WasCalled('messages.send'), 'API должен быть вызван');
   finally
     aParams.Free;
   end;
@@ -813,18 +813,18 @@ end;
 
 procedure TAPICallTests.TestMultipleAPICallsLogged;
 begin
-  fBot.MockClient.SetDefaultResponse('{"response":{}}');
+  TMockHTTPClient.SetDefaultResponse('{"response":{}}');
 
   fBot.SendMessage(1, 'Message 1');
   fBot.SendMessage(2, 'Message 2');
   fBot.SendMessage(3, 'Message 3');
 
-  CheckEquals(3, fBot.MockClient.GetCallCount, 'Должно быть 3 API вызова');
+  CheckEquals(3, TMockHTTPClient.GetCallCount, 'Должно быть 3 API вызова');
 
   // Проверяем, что каждый вызов залогирован
-  CheckTrue(Pos('peer_id=1', fBot.MockClient.GetCall(0)) > 0, 'Первый вызов с peer_id=1');
-  CheckTrue(Pos('peer_id=2', fBot.MockClient.GetCall(1)) > 0, 'Второй вызов с peer_id=2');
-  CheckTrue(Pos('peer_id=3', fBot.MockClient.GetCall(2)) > 0, 'Третий вызов с peer_id=3');
+  CheckTrue(Pos('peer_id=1', TMockHTTPClient.GetCall(0)) > 0, 'Первый вызов с peer_id=1');
+  CheckTrue(Pos('peer_id=2', TMockHTTPClient.GetCall(1)) > 0, 'Второй вызов с peer_id=2');
+  CheckTrue(Pos('peer_id=3', TMockHTTPClient.GetCall(2)) > 0, 'Третий вызов с peer_id=3');
 end;
 
 { TIntegrationTests }
@@ -850,7 +850,7 @@ end;
 procedure TIntegrationTests.SetUp;
 begin
   fBot := TTestVKBot.Create('test_token', 12345);
-  fBot.MockClient.SetDefaultResponse('{"response":{"message_id":1}}');
+  TMockHTTPClient.SetDefaultResponse('{"response":{"message_id":1}}');
   fMessageReceived := False;
   fReceivedText := EmptyStr;
   fEventCalled := False;
@@ -874,12 +874,12 @@ begin
     aMsgData.Add('text', '/test arg1 arg2');
     aMsgData.Add('peer_id', Int64(999));
 
-    fBot.MockClient.ClearCalls;
+    TMockHTTPClient.ClearCalls;
     fBot.ProcessMessage(aMsgData);
 
     // Проверяем, что команда вызвала отправку сообщения
-    CheckEquals(1, fBot.MockClient.GetCallCount, 'Команда должна вызвать SendMessage');
-    CheckTrue(fBot.MockClient.WasCalled(EncodeURLElement('Command executed')), 'Должен отправить ответ команды');
+    CheckEquals(1, TMockHTTPClient.GetCallCount, 'Команда должна вызвать SendMessage');
+    CheckTrue(TMockHTTPClient.WasCalled(EncodeURLElement('Command executed')), 'Должен отправить ответ команды');
   finally
     aMsgData.Free;
   end;
@@ -896,13 +896,13 @@ begin
     aMsgData.Add('text', 'Hello bot');
     aMsgData.Add('peer_id', Int64(888));
 
-    fBot.MockClient.ClearCalls;
+    TMockHTTPClient.ClearCalls;
     fBot.ProcessMessage(aMsgData);
 
     CheckTrue(fMessageReceived, 'Обработчик сообщений должен быть вызван');
     CheckEquals('Hello bot', fReceivedText, 'Текст сообщения должен совпадать');
-    CheckEquals(1, fBot.MockClient.GetCallCount, 'Должен быть один вызов API (Reply)');
-    CheckTrue(fBot.MockClient.WasCalled(EncodeURLElement('Auto reply')), 'Должен отправить авто-ответ');
+    CheckEquals(1, TMockHTTPClient.GetCallCount, 'Должен быть один вызов API (Reply)');
+    CheckTrue(TMockHTTPClient.WasCalled(EncodeURLElement('Auto reply')), 'Должен отправить авто-ответ');
   finally
     aMsgData.Free;
   end;

@@ -89,7 +89,7 @@ begin
   fLogMessages := TStringList.Create;
   fBot := TMockVKBot.Create('test_token', 123456);
   fBot.OnLog := @OnLog;
-  fBot.MockClient.SetDefaultResponse('{"response":1}');
+  TMockHTTPClient.SetDefaultResponse('{"response":1}');
 
   fProcessor := TVKWebhookProcessor.Create(fBot, 'confirmation_code_123', 'webhook_secret');
   fProcessor.OnLog := @OnLog;
@@ -324,7 +324,7 @@ end;
 procedure TWebhookIntegrationTests.SetUp;
 begin
   fBot := TMockVKBot.Create('integration_token', 555666);
-  fBot.MockClient.SetDefaultResponse('{"response":1}');
+  TMockHTTPClient.SetDefaultResponse('{"response":1}');
   fProcessor := TVKWebhookProcessor.Create(fBot, 'conf_123', 'secret_xyz');
   fCommandExecuted := False;
   fMessageText := '';
@@ -368,12 +368,12 @@ begin
   aRequestBody := '{"type":"message_new","object":{"message":{"text":"/start","peer_id":111,' +
     '"payload":"{\"command\":\"start\"}","from_id":222}},"group_id":555666,"secret":"secret_xyz"}';
 
-  fBot.MockClient.ClearCalls;
+  TMockHTTPClient.ClearCalls;
   aResponse := fProcessor.ProcessWebhook(aRequestBody);
 
   CheckTrue(wrtOK=aResponse.ResponseType);
   CheckTrue(fCommandExecuted, 'Команда из payload должна выполниться');
-  CheckTrue(fBot.MockClient.WasCalled('messages.send'), 'Должен быть вызов API для ответа');
+  CheckTrue(TMockHTTPClient.WasCalled('messages.send'), 'Должен быть вызов API для ответа');
 end;
 
 procedure TWebhookIntegrationTests.TestWebhookToMessageHandler;

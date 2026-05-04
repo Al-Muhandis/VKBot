@@ -3,7 +3,8 @@ program VKBotExample;
 {$mode objfpc}{$H+}
 
 uses
-  SysUtils, VKTypes, VKBotFramework, fpjson, eventlog;
+  SysUtils, VKTypes, VKBotFramework, fpjson, eventlog
+  ;
 
 type
 

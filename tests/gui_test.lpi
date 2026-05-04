@@ -139,6 +139,11 @@
         <IsPartOfProject Value="True"/>
         <UnitName Value="VKDeeplinkTests"/>
       </Unit>
+      <Unit>
+        <Filename Value="..\src\vkbasehttpclient.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="VKBaseHTTPClient"/>
+      </Unit>
     </Units>
   </ProjectOptions>
   <CompilerOptions>

@@ -180,7 +180,7 @@ end;
 procedure TVKMessageRefTests.SetUp;
 begin
   fBot := TTestVKBot.Create('test_token', 123);
-  fBot.MockClient.SetDefaultResponse('{"response":1}');
+  TMockHTTPClient.SetDefaultResponse('{"response":1}');
 end;
 
 procedure TVKMessageRefTests.TearDown;
@@ -300,7 +300,7 @@ end;
 procedure TVKBotDeeplinkDispatchTests.SetUp;
 begin
   fBot := TTestVKBot.Create('test_token', 123456);
-  fBot.MockClient.SetDefaultResponse('{"response":1}');
+  TMockHTTPClient.SetDefaultResponse('{"response":1}');
   fExactHandlerCalled    := False;
   fFallbackHandlerCalled := False;
   fCommandHandlerCalled  := False;
