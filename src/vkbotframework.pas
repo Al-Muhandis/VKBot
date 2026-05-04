@@ -162,8 +162,8 @@ type
     constructor Create(aOneTime: Boolean = False; aInline: Boolean = False);
     destructor Destroy; override;
 
-    function AddButton(const aLabel: string; aColor: TVKButtonColor = bcSecondary;
-      const aPayload: string = ''): TVKKeyboard;
+    function AddButton(const aLabel: string; aColor: TVKButtonColor=bcSecondary; const aPayload: string='';
+      aType: TVKButtonType=btText): TVKKeyboard;
     function AddRow: TVKKeyboard;
     function Build: string;
 
@@ -618,8 +618,8 @@ begin
   inherited;
 end;
 
-function TVKKeyboard.AddButton(const aLabel: string;
-  aColor: TVKButtonColor = bcSecondary; const aPayload: string = ''): TVKKeyboard;
+function TVKKeyboard.AddButton(const aLabel: string; aColor: TVKButtonColor = bcSecondary;
+  const aPayload: string = ''; aType: TVKButtonType = btText): TVKKeyboard;
 var
   aCurrentRow: TJSONArray;
   aButton, aAction: TJSONObject;
@@ -629,7 +629,7 @@ begin
 
   aButton := TJSONObject.Create;
   aAction := TJSONObject.Create;
-  aAction.Add('type', 'text');
+  aAction.Add('type', VKButtonTypeToString(aType));
   aAction.Add('label', aLabel);
   if aPayload <> '' then
     aAction.Add('payload', aPayload);

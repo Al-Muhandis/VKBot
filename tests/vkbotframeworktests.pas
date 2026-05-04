@@ -43,6 +43,7 @@ type
     procedure TestCreateDefault;
     procedure TestBuildStructure;
     procedure TestAddButton;
+    procedure TestAddCallbackButton;
     procedure TestAddRow;
     procedure TestBuildWithPayload;
     procedure TestOneTimeAndInlineFlags;
@@ -317,6 +318,30 @@ begin
     CheckEquals('text', aAction.Get('type', ''), 'Тип действия');
     CheckEquals('Click Me', aAction.Get('label', ''), 'Текст кнопки');
     CheckEquals('{"cmd":"test"}', aAction.Get('payload', ''), 'Payload кнопки');
+  finally
+    aJSON.Free;
+  end;
+end;
+
+procedure TKeyboardTests.TestAddCallbackButton;
+var
+  aButtons: TJSONArray;
+  aFirstRow: TJSONArray;
+  aButton: TJSONObject;
+  aAction, aJSON: TJSONObject;
+begin
+  fKeyboard.AddButton('Call Me', bcPrimary, '{"cmd":"cb"}', btCallback);
+
+  aJSON := GetJSON(fKeyboard.Build) as TJSONObject;
+  try
+    aButtons := aJSON.Arrays['buttons'];
+    aFirstRow := aButtons.Items[0] as TJSONArray;
+    aButton := aFirstRow.Items[0] as TJSONObject;
+    aAction := aButton.Find('action') as TJSONObject;
+
+    CheckEquals('callback', aAction.Get('type', ''), 'Тип действия callback');
+    CheckEquals('Call Me', aAction.Get('label', ''), 'Текст callback-кнопки');
+    CheckEquals('{"cmd":"cb"}', aAction.Get('payload', ''), 'Payload callback-кнопки');
   finally
     aJSON.Free;
   end;

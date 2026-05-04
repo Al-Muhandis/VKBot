@@ -64,6 +64,16 @@ type
     bcPositive    // Green
   );
 
+  { Button action types for VK keyboard }
+  TVKButtonType = (
+    btText,     // text
+    btLocation, // location
+    btVKPat,    // vkpay
+    btOpenLink, // open_link
+    btOpenApp,  // open_app
+    btCallback  // callback
+  );
+
   { Webhook request data structure }
   TVKWebhookRequest = record
     RawBody: string;
@@ -150,7 +160,9 @@ const
 { Helper functions }
 function VKEventTypeFromString(const aType: string): TVKEventType;
 function VKEventTypeToString(aType: TVKEventType): string;
-function VKButtonColorToString(aColor: TVKButtonColor): string;
+function VKButtonColorToString(aColor: TVKButtonColor): string;      
+function VKButtonTypeToString(aType: TVKButtonType): string;
+
 
 { Webhook helpers }
 function CreateWebhookOKResponse: TVKWebhookResponse;
@@ -249,6 +261,15 @@ const
 begin
   Result := aColors[aColor];
 end;
+
+{ Helper: button type → VK API string }
+function VKButtonTypeToString(aType: TVKButtonType): string;
+const
+  aTypes: array[TVKButtonType] of string = ('text', 'location', 'vkpay', 'open_link', 'open_app', 'callback');
+begin
+  Result := aTypes[aType];
+end;
+
 
 { Webhook helpers }
 
