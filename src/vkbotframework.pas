@@ -174,7 +174,7 @@ type
 implementation
 
 uses
-  DateUtils, opensslsockets, VKFCLHTTPClient
+  DateUtils, opensslsockets, VKFCLHTTPClientBroker
   ;
 
 { TVKMessage }
@@ -583,8 +583,7 @@ begin
   fRunning := False;
 end;
 
-function TVKBot.SendMessage(aPeerID: Int64; const aText: string;
-  const aKeyboard: string = ''): Boolean;
+function TVKBot.SendMessage(aPeerID: Int64; const aText: string; const aKeyboard: string = ''): Boolean;
 var
   aParams: TJSONObject;
 begin

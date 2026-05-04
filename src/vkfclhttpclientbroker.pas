@@ -19,9 +19,6 @@ type
     constructor Create(aOwner: TComponent); override;
     destructor Destroy; override;
     function Get(const AURL: string): string; override;
-    class function GetClientClass: TBaseClientClass;
-    class procedure RegisterClientClass;
-    class procedure UnregisterClientClass;
   end;
 
 implementation
