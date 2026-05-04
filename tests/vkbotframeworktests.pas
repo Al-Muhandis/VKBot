@@ -301,7 +301,7 @@ var
   aButton: TJSONObject;
   aAction, aJSON: TJSONObject;
 begin
-  fKeyboard.AddButton('Click Me', bcPrimary, '{"cmd":"test"}');
+  fKeyboard.AddButton('Click Me', bcPrimary, btText, '{"cmd":"test"}');
 
   aJSON := GetJSON(fKeyboard.Build) as TJSONObject;
   try
@@ -330,7 +330,7 @@ var
   aButton: TJSONObject;
   aAction, aJSON: TJSONObject;
 begin
-  fKeyboard.AddButton('Call Me', bcPrimary, '{"cmd":"cb"}', btCallback);
+  fKeyboard.AddButton('Call Me', bcPrimary, btCallback, '{"cmd":"cb"}');
 
   aJSON := GetJSON(fKeyboard.Build) as TJSONObject;
   try
@@ -376,7 +376,7 @@ var
   aButton: TJSONObject;
   aAction: TJSONObject;
 begin
-  fKeyboard.AddButton('Test', bcSecondary, '{"action":"test"}');
+  fKeyboard.AddButton('Test', bcSecondary, btText, '{"action":"test"}');
 
   aJSON := GetJSON(fKeyboard.Build) as TJSONObject;
   try
