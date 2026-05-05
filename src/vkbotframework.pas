@@ -10,12 +10,14 @@ uses
 
 type
   TVKMessage = class;
+  TVKMessageEvent = class;
   TVKBot = class;
 
   { Event handler types }
-  TMessageHandler = procedure(const aMessage: TVKMessage) of object;
-  TCommandHandler = procedure(const aMessage: TVKMessage; const aArgs: TStringArray) of object;
-  TEventHandler   = procedure(const aEvent: TJSONObject) of object;
+  TMessageHandler      = procedure(const aMessage: TVKMessage) of object;
+  TCommandHandler      = procedure(const aMessage: TVKMessage; const aArgs: TStringArray) of object;
+  TEventHandler        = procedure(const aEvent: TJSONObject) of object;
+  TMessageEventHandler = procedure(const aEvent: TVKMessageEvent) of object;
 
   { Deeplink handler.
     Called while incoming message contains ref (user income with link like vk.me/<username>?ref=<...>).
@@ -58,6 +60,37 @@ type
     property Data: TJSONObject read fData;
   end;
 
+  { TVKMessageEvent }
+  {
+    TVKMessageEvent — JSON wrapper for message_event (callback inline button).
+    The object has no nested "message"; it contains directly:
+      user_id, peer_id, event_id, conversation_message_id, payload (TJSONObject).
+  }
+  TVKMessageEvent = class
+  private
+    fData: TJSONObject;
+    fBot:  TVKBot;
+    function GetUserID: Int64;
+    function GetPeerID: Int64;
+    function GetEventID: string;
+    function GetConversationMessageId: Int64;
+    function GetPayload: TJSONObject;
+  public
+    constructor Create(aBot: TVKBot; aData: TJSONObject);
+
+    { Send a text message back to the same peer }
+    procedure Reply(const aText: string; const aKeyboard: string = '');
+
+    property UserID:                 Int64       read GetUserID;
+    property PeerID:                 Int64       read GetPeerID;
+    property EventID:                string      read GetEventID;
+    property ConversationMessageId:  Int64       read GetConversationMessageId;
+    { Payload is a TJSONObject (do NOT free — owned by fData) }
+    property Payload:                TJSONObject read GetPayload;
+
+    property Data: TJSONObject read fData;
+  end;
+
   { TStringHash }
 
   TStringHash = class
@@ -74,9 +107,10 @@ type
 
   generic TEventTypeHashMap<T> = class(specialize THashMap<TVKEventType, T, TEventTypeHash>) end;
 
-  TCommandMap   = specialize TStringHashMap<TCommandHandler>;
-  TEventMap     = specialize TEventTypeHashMap<TEventHandler>;
-  THandlerList  = specialize TVector<TMessageHandler>;
+  TCommandMap             = specialize TStringHashMap<TCommandHandler>;
+  TEventMap               = specialize TEventTypeHashMap<TEventHandler>;
+  THandlerList            = specialize TVector<TMessageHandler>;
+  TMessageEventHandlerList = specialize TVector<TMessageEventHandler>;
 
   { TVKBot }
   {
@@ -88,9 +122,10 @@ type
     fToken: string;
     fGroupID: Int64;
     fAPIVersion: string;
-    fCommands: TCommandMap;
-    fMessageHandlers: THandlerList;
-    fEventHandlers: TEventMap;
+    fCommands:             TCommandMap;
+    fMessageHandlers:      THandlerList;
+    fMessageEventHandlers: TMessageEventHandlerList;
+    fEventHandlers:        TEventMap;
     fOnDeeplink: TDeeplinkHandler;
 
     fRunning: Boolean;
@@ -116,11 +151,13 @@ type
 
   protected
     procedure ProcessMessage(const aMessage: TJSONObject);
+    procedure ProcessMessageEvent(const aEventObject: TJSONObject);
     property RawJSON: TJSONData read fJSON write fJSON;
     property EventMap: TEventMap read fEventHandlers;
     property CommandMap: TCommandMap read fCommands;
   public
     procedure AddMessageHandler(aHandler: TMessageHandler);
+    procedure AddMessageEventHandler(aHandler: TMessageEventHandler);
 
     constructor Create(const aToken: string; aGroupID: Int64 = 0);
     destructor Destroy; override;
@@ -147,7 +184,8 @@ type
       read GetEventHandlerByEnum write SetEventHandlerByEnum;
     property EventHandlersByName[const aEventType: String]: TEventHandler
       read GetEventHandlerByName write SetEventHandlerByName;
-    property MessageHandlers: THandlerList read fMessageHandlers;
+    property MessageHandlers:      THandlerList             read fMessageHandlers;
+    property MessageEventHandlers: TMessageEventHandlerList read fMessageEventHandlers;
     property OnLog: TOnLogEvent read fOnLog write fOnLog;
   end;
 
@@ -233,6 +271,45 @@ begin
   fBot.SendMessage(specialize IfThen<Int64>(aPeerID = 0, PeerID, aPeerID), aText, aKeyboard);
 end;
 
+{ TVKMessageEvent }
+
+constructor TVKMessageEvent.Create(aBot: TVKBot; aData: TJSONObject);
+begin
+  inherited Create;
+  fBot  := aBot;
+  fData := aData;
+end;
+
+function TVKMessageEvent.GetUserID: Int64;
+begin
+  Result := fData.Get('user_id', Int64(0));
+end;
+
+function TVKMessageEvent.GetPeerID: Int64;
+begin
+  Result := fData.Get('peer_id', Int64(0));
+end;
+
+function TVKMessageEvent.GetEventID: string;
+begin
+  Result := fData.Get('event_id', EmptyStr);
+end;
+
+function TVKMessageEvent.GetConversationMessageId: Int64;
+begin
+  Result := fData.Get('conversation_message_id', Integer(0));
+end;
+
+function TVKMessageEvent.GetPayload: TJSONObject;
+begin
+  Result := fData.Get('payload', TJSONObject(nil));
+end;
+
+procedure TVKMessageEvent.Reply(const aText: string; const aKeyboard: string = '');
+begin
+  fBot.SendMessage(PeerID, aText, aKeyboard);
+end;
+
 { TStringHash }
 
 class function TStringHash.hash(s: String; n: Integer): Integer;
@@ -262,9 +339,10 @@ begin
   fAPIVersion := VK_API_VERSION;
   fRunning    := False;
 
-  fCommands        := TCommandMap.Create;
-  fMessageHandlers := THandlerList.Create;
-  fEventHandlers   := TEventMap.Create;
+  fCommands             := TCommandMap.Create;
+  fMessageHandlers      := THandlerList.Create;
+  fMessageEventHandlers := TMessageEventHandlerList.Create;
+  fEventHandlers        := TEventMap.Create;
 end;
 
 destructor TVKBot.Destroy;
@@ -272,6 +350,7 @@ begin
   Stop;
   fCommands.Free;
   fMessageHandlers.Free;
+  fMessageEventHandlers.Free;
   fEventHandlers.Free;
   fJSON.Free;
   inherited;
@@ -443,17 +522,18 @@ begin
     Exit;
   end;
 
-  DoLog(llDebug, Format('Processing event: type=%s', [VKEventTypeToString(aEventType)])); 
+  DoLog(llDebug, Format('Processing event: type=%s', [VKEventTypeToString(aEventType)]));
   DoLog(llDebug, 'JSON: '+aUpdate.AsJSON);
 
-  if aEventType = etMessageNew then
-    ProcessMessage(aEventObject.Get('message', TJSONObject(nil)))
-  else
-    if fEventHandlers.Contains(aEventType) then
-    begin
-      aHandler := fEventHandlers[aEventType];
-      aHandler(aEventObject);
-    end;
+  case aEventType of
+    etMessageNew:   ProcessMessage(aEventObject.Get('message', TJSONObject(nil)));
+    etMessageEvent: ProcessMessageEvent(aEventObject);
+  end;
+  if fEventHandlers.Contains(aEventType) then
+  begin
+    aHandler := fEventHandlers[aEventType];
+    aHandler(aEventObject);
+  end;
 end;
 
 procedure TVKBot.ProcessMessage(const aMessage: TJSONObject);
@@ -529,6 +609,32 @@ begin
   finally
     aMsg.Free;
   end;
+end;
+
+procedure TVKBot.ProcessMessageEvent(const aEventObject: TJSONObject);
+var
+  aEvt: TVKMessageEvent;
+  aHandler: TMessageEventHandler;
+  i: Integer;
+begin
+  if not Assigned(aEventObject) then Exit;
+
+  aEvt := TVKMessageEvent.Create(Self, aEventObject);
+  try
+    if fMessageEventHandlers.Size > 0 then
+      for i := 0 to fMessageEventHandlers.Size - 1 do
+      begin
+        aHandler := fMessageEventHandlers[i];
+        aHandler(aEvt);
+      end;
+  finally
+    aEvt.Free;
+  end;
+end;
+
+procedure TVKBot.AddMessageEventHandler(aHandler: TMessageEventHandler);
+begin
+  fMessageEventHandlers.PushBack(aHandler);
 end;
 
 procedure TVKBot.Start;

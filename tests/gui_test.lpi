@@ -185,6 +185,9 @@
       <Item>
         <Name Value="EArgumentException"/>
       </Item>
+      <Item>
+        <Name Value="Exception"/>
+      </Item>
     </Exceptions>
   </Debugging>
 </CONFIG>

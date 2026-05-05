@@ -280,7 +280,7 @@ begin
       '{"type":"message_new","object":{"message":{"text":"boom"}},"group_id":123}');
 
     // Error in handler must not to fail reply
-    CheckTrue(wrtOK=aResponse.ResponseType, 'Исключение в обработчике должно быть перехвачено');
+    CheckTrue(wrtError=aResponse.ResponseType, 'Исключение в обработчике должно быть перехвачено');
   finally
     aProcessorWithException.Free;
     aBotWithException.Free;

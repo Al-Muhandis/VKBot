@@ -112,6 +112,78 @@ type
     procedure TestProcessEventUnknownType;
   end;
 
+  { TMessageEventTests — unit tests for TVKMessageEvent wrapper }
+  TMessageEventTests = class(TTestCase)
+  private
+    fBot:      TMockVKBot;
+    fEvtData:  TJSONObject;
+    fPayload:  TJSONObject;
+    fEvent:    TVKMessageEvent;
+  protected
+    procedure SetUp; override;
+    procedure TearDown; override;
+  published
+    procedure TestGetUserID;
+    procedure TestGetPeerID;
+    procedure TestGetEventID;
+    procedure TestGetConversationMessageId;
+    procedure TestGetPayload;
+    procedure TestGetPayloadNil;
+    procedure TestReplyCallsSendMessage;
+    procedure TestReplyUsesCorrectPeerID;
+  end;
+
+  { TMessageEventHandlerTests — ProcessMessageEvent + AddMessageEventHandler }
+  TMessageEventHandlerTests = class(TTestCase)
+  private
+    fBot:             TTestVKBot;
+    fHandlerCalled:   Boolean;
+    fHandlerCount:    Integer;
+    fReceivedUserID:  Int64;
+    fReceivedPeerID:  Int64;
+    fReceivedEventID: string;
+    procedure EventHandler(const aEvent: TVKMessageEvent);
+    procedure SecondEventHandler(const {%H-}aEvent: TVKMessageEvent);
+  protected
+    procedure SetUp; override;
+    procedure TearDown; override;
+  published
+    procedure TestHandlerCalledOnMessageEvent;
+    procedure TestHandlerReceivesCorrectData;
+    procedure TestMultipleHandlersCalled;
+    procedure TestNoHandlersDoesNotCrash;
+    procedure TestNilEventObjectDoesNotCrash;
+  end;
+
+  { TProcessUpdateMessageEventTests — ProcessUpdate behaviour for message_event }
+  TProcessUpdateMessageEventTests = class(TTestCase)
+  private
+    fBot:                TTestVKBot;
+    fMsgEventHandled:    Boolean;
+    fMsgHandled:         Boolean;
+    fRawEventHandled:    Boolean;
+    fReceivedUserID:     Int64;
+    fReceivedRawObject:  TJSONObject;
+    procedure OnMessageEvent(const aEvent: TVKMessageEvent);
+    procedure OnRawEvent(const aEvent: TJSONObject);
+    function  MakeMessageEventUpdate: TJSONObject;
+    procedure TestMessageHandler(const {%H-}aMessage: TVKMessage);
+  protected
+    procedure SetUp; override;
+    procedure TearDown; override;
+  published
+    { message_event fires ProcessMessageEvent handler }
+    procedure TestMessageEventFiresSpecificHandler;
+    { message_event ALSO fires generic EventHandlers[etMessageEvent] }
+    procedure TestMessageEventAlsoFiresGenericHandler;
+    { both fire in the same ProcessUpdate call }
+    procedure TestMessageEventFiresBothHandlers;
+    { message_new fires ProcessMessage AND generic EventHandlers[etMessageNew] }
+    procedure TestMessageNewFiresBothHandlers;
+    { unknown type is ignored without crash }
+    procedure TestUnknownEventTypeIgnored(const {%H-}aMsg: TVKMessage);
+  end;
+
   { TAPICallTests }
   TAPICallTests = class(TTestCase)
   private
@@ -137,7 +209,7 @@ type
     fEventCalled: Boolean;
     fMessageReceived: Boolean;
     fReceivedEvent: TJSONObject;
-    fReceivedText: string;     
+    fReceivedText: string;
     procedure DummyEventHandler(const aEvent: TJSONObject);
     procedure HandleMessage(const aMsg: TVKMessage);
     procedure HandleCommand(const aMsg: TVKMessage; const {%H-}aArgs: TStringArray);
@@ -1032,13 +1104,372 @@ begin
   CheckEquals(Ord(etUnknown), Ord(VKEventTypeFromString('MESSAGE_NEW')));
 end;
 
+{ TMessageEventTests }
+
+procedure TMessageEventTests.SetUp;
+begin
+  fBot     := TMockVKBot.Create('test_token', 123456);
+  TMockHTTPClient.SetDefaultResponse('{"response":{"message_id":1}}');
+
+  fPayload := TJSONObject.Create;
+  fPayload.Add('test', Int64(23410));
+  fPayload.Add('question', Int64(1));
+
+  fEvtData := TJSONObject.Create;
+  fEvtData.Add('user_id', Int64(2856025));
+  fEvtData.Add('peer_id', Int64(2856025));
+  fEvtData.Add('event_id', '5d19bd487fbd');
+  fEvtData.Add('payload', fPayload);     { fEvtData owns fPayload }
+  fEvtData.Add('conversation_message_id', Int64(17));
+
+  fEvent := TVKMessageEvent.Create(fBot, fEvtData);
+end;
+
+procedure TMessageEventTests.TearDown;
+begin
+  fEvent.Free;
+  fEvtData.Free;    { also frees fPayload }
+  fBot.Free;
+end;
+
+procedure TMessageEventTests.TestGetUserID;
+begin
+  CheckEquals(Int64(2856025), fEvent.UserID);
+end;
+
+procedure TMessageEventTests.TestGetPeerID;
+begin
+  CheckEquals(Int64(2856025), fEvent.PeerID);
+end;
+
+procedure TMessageEventTests.TestGetEventID;
+begin
+  CheckEquals('5d19bd487fbd', fEvent.EventID);
+end;
+
+procedure TMessageEventTests.TestGetConversationMessageId;
+begin
+  CheckEquals(Int64(17), fEvent.ConversationMessageId);
+end;
+
+procedure TMessageEventTests.TestGetPayload;
+var
+  aPayload: TJSONObject;
+begin
+  aPayload := fEvent.Payload;
+  CheckNotNull(aPayload, 'Payload не должен быть nil');
+  CheckEquals(Int64(23410), aPayload.Get('test', Int64(0)));
+  CheckEquals(Int64(1),     aPayload.Get('question', Int64(0)));
+end;
+
+procedure TMessageEventTests.TestGetPayloadNil;
+var
+  aData:  TJSONObject;
+  aEvent: TVKMessageEvent;
+begin
+  { object without payload field }
+  aData := TJSONObject.Create;
+  try
+    aData.Add('user_id', Int64(1));
+    aData.Add('peer_id', Int64(1));
+    aData.Add('event_id', 'abc');
+    aEvent := TVKMessageEvent.Create(fBot, aData);
+    try
+      CheckNull(aEvent.Payload, 'Payload без поля должен возвращать nil');
+    finally
+      aEvent.Free;
+    end;
+  finally
+    aData.Free;
+  end;
+end;
+
+procedure TMessageEventTests.TestReplyCallsSendMessage;
+begin
+  TMockHTTPClient.ClearCalls;
+  fEvent.Reply('Принято!');
+  CheckTrue(TMockHTTPClient.GetCallCount > 0, 'Reply должен вызвать messages.send');
+end;
+
+procedure TMessageEventTests.TestReplyUsesCorrectPeerID;
+begin
+  TMockHTTPClient.ClearCalls;
+  fEvent.Reply('Ок');
+  CheckTrue(TMockHTTPClient.WasCalled('peer_id=2856025'),
+    'Reply должен отправить на peer_id из события');
+end;
+
+{ TMessageEventHandlerTests }
+
+procedure TMessageEventHandlerTests.SetUp;
+begin
+  fBot            := TTestVKBot.Create('test_token', 123456);
+  TMockHTTPClient.SetDefaultResponse('{"response":{"message_id":1}}');
+  fHandlerCalled  := False;
+  fHandlerCount   := 0;
+  fReceivedUserID := 0;
+  fReceivedPeerID := 0;
+  fReceivedEventID := '';
+end;
+
+procedure TMessageEventHandlerTests.TearDown;
+begin
+  fBot.Free;
+end;
+
+procedure TMessageEventHandlerTests.EventHandler(const aEvent: TVKMessageEvent);
+begin
+  fHandlerCalled   := True;
+  Inc(fHandlerCount);
+  fReceivedUserID  := aEvent.UserID;
+  fReceivedPeerID  := aEvent.PeerID;
+  fReceivedEventID := aEvent.EventID;
+end;
+
+procedure TMessageEventHandlerTests.SecondEventHandler(const aEvent: TVKMessageEvent);
+begin
+  Inc(fHandlerCount);
+end;
+
+procedure TMessageEventHandlerTests.TestHandlerCalledOnMessageEvent;
+var
+  aEvtData: TJSONObject;
+begin
+  fBot.AddMessageEventHandler(@EventHandler);
+
+  aEvtData := TJSONObject.Create;
+  try
+    aEvtData.Add('user_id', Int64(111));
+    aEvtData.Add('peer_id', Int64(222));
+    aEvtData.Add('event_id', 'aabbcc');
+    aEvtData.Add('conversation_message_id', Int64(5));
+    fBot.ProcessMessageEvent(aEvtData);
+
+    CheckTrue(fHandlerCalled, 'Обработчик message_event должен быть вызван');
+  finally
+    aEvtData.Free;
+  end;
+end;
+
+procedure TMessageEventHandlerTests.TestHandlerReceivesCorrectData;
+var
+  aEvtData: TJSONObject;
+begin
+  fBot.AddMessageEventHandler(@EventHandler);
+
+  aEvtData := TJSONObject.Create;
+  try
+    aEvtData.Add('user_id', Int64(9999));
+    aEvtData.Add('peer_id', Int64(8888));
+    aEvtData.Add('event_id', 'deadbeef');
+    aEvtData.Add('conversation_message_id', Int64(42));
+    fBot.ProcessMessageEvent(aEvtData);
+
+    CheckEquals(Int64(9999),   fReceivedUserID,  'UserID должен совпадать');
+    CheckEquals(Int64(8888),   fReceivedPeerID,  'PeerID должен совпадать');
+    CheckEquals('deadbeef',    fReceivedEventID, 'EventID должен совпадать');
+  finally
+    aEvtData.Free;
+  end;
+end;
+
+procedure TMessageEventHandlerTests.TestMultipleHandlersCalled;
+var
+  aEvtData: TJSONObject;
+begin
+  fBot.AddMessageEventHandler(@EventHandler);
+  fBot.AddMessageEventHandler(@SecondEventHandler);
+
+  aEvtData := TJSONObject.Create;
+  try
+    aEvtData.Add('user_id', Int64(1));
+    aEvtData.Add('peer_id', Int64(1));
+    aEvtData.Add('event_id', 'x');
+    fBot.ProcessMessageEvent(aEvtData);
+
+    CheckEquals(2, fHandlerCount, 'Оба обработчика должны сработать');
+  finally
+    aEvtData.Free;
+  end;
+end;
+
+procedure TMessageEventHandlerTests.TestNoHandlersDoesNotCrash;
+var
+  aEvtData: TJSONObject;
+begin
+  { no handlers registered — must not raise }
+  aEvtData := TJSONObject.Create;
+  try
+    aEvtData.Add('user_id', Int64(1));
+    aEvtData.Add('peer_id', Int64(1));
+    aEvtData.Add('event_id', 'y');
+    fBot.ProcessMessageEvent(aEvtData);
+  finally
+    aEvtData.Free;
+  end;
+end;
+
+procedure TMessageEventHandlerTests.TestNilEventObjectDoesNotCrash;
+begin
+  fBot.AddMessageEventHandler(@EventHandler);
+  fBot.ProcessMessageEvent(nil);
+  CheckFalse(fHandlerCalled, 'Обработчик не должен вызываться при nil');
+end;
+
+{ TProcessUpdateMessageEventTests }
+
+procedure TProcessUpdateMessageEventTests.SetUp;
+begin
+  fBot               := TTestVKBot.Create('test_token', 123456);
+  TMockHTTPClient.SetDefaultResponse('{"response":{"message_id":1}}');
+  fMsgEventHandled   := False;
+  fRawEventHandled   := False;
+  fReceivedUserID    := 0;
+  fReceivedRawObject := nil;
+end;
+
+procedure TProcessUpdateMessageEventTests.TearDown;
+begin
+  fReceivedRawObject.Free;
+  fBot.Free;
+end;
+
+procedure TProcessUpdateMessageEventTests.OnMessageEvent(const aEvent: TVKMessageEvent);
+begin
+  fMsgEventHandled := True;
+  fReceivedUserID  := aEvent.UserID;
+end;
+
+procedure TProcessUpdateMessageEventTests.OnRawEvent(const aEvent: TJSONObject);
+begin
+  fRawEventHandled   := True;
+  fReceivedRawObject := TJSONObject(aEvent.Clone);
+end;
+
+function TProcessUpdateMessageEventTests.MakeMessageEventUpdate: TJSONObject;
+var
+  aObject, aPayload: TJSONObject;
+begin
+  aPayload := TJSONObject.Create;
+  aPayload.Add('test', Int64(23410));
+  aPayload.Add('question', Int64(1));
+
+  aObject := TJSONObject.Create;
+  aObject.Add('user_id', Int64(2856025));
+  aObject.Add('peer_id', Int64(2856025));
+  aObject.Add('event_id', '5d19bd487fbd');
+  aObject.Add('payload', aPayload);
+  aObject.Add('conversation_message_id', Int64(17));
+
+  Result := TJSONObject.Create;
+  Result.Add('type', 'message_event');
+  Result.Add('object', aObject);
+end;
+
+procedure TProcessUpdateMessageEventTests.TestMessageHandler(const aMessage: TVKMessage);
+begin
+  fMsgHandled := True;
+end;
+
+procedure TProcessUpdateMessageEventTests.TestMessageEventFiresSpecificHandler;
+var
+  aUpdate: TJSONObject;
+begin
+  fBot.AddMessageEventHandler(@OnMessageEvent);
+
+  aUpdate := MakeMessageEventUpdate;
+  try
+    fBot.ProcessUpdate(aUpdate);
+    CheckTrue(fMsgEventHandled,
+      'ProcessMessageEvent-хендлер должен сработать при message_event');
+    CheckEquals(Int64(2856025), fReceivedUserID, 'UserID должен быть передан корректно');
+  finally
+    aUpdate.Free;
+  end;
+end;
+
+procedure TProcessUpdateMessageEventTests.TestMessageEventAlsoFiresGenericHandler;
+var
+  aUpdate: TJSONObject;
+begin
+  fBot.EventHandlers[etMessageEvent] := @OnRawEvent;
+
+  aUpdate := MakeMessageEventUpdate;
+  try
+    fBot.ProcessUpdate(aUpdate);
+    CheckTrue(fRawEventHandled,
+      'Обобщённый EventHandlers[etMessageEvent] должен также сработать');
+    CheckNotNull(fReceivedRawObject, 'Объект события должен быть передан');
+    CheckEquals(Int64(2856025), fReceivedRawObject.Get('user_id', Int64(0)));
+  finally
+    aUpdate.Free;
+  end;
+end;
+
+procedure TProcessUpdateMessageEventTests.TestMessageEventFiresBothHandlers;
+var
+  aUpdate: TJSONObject;
+begin
+  fBot.AddMessageEventHandler(@OnMessageEvent);
+  fBot.EventHandlers[etMessageEvent] := @OnRawEvent;
+
+  aUpdate := MakeMessageEventUpdate;
+  try
+    fBot.ProcessUpdate(aUpdate);
+    CheckTrue(fMsgEventHandled,  'Специфичный хендлер должен сработать');
+    CheckTrue(fRawEventHandled,  'Обобщённый хендлер должен сработать');
+  finally
+    aUpdate.Free;
+  end;
+end;
+
+procedure TProcessUpdateMessageEventTests.TestMessageNewFiresBothHandlers;
+var
+  aUpdate, aObject, aMessage: TJSONObject;
+begin
+  fMsgHandled := False;
+
+  fBot.AddMessageHandler(@TestMessageHandler);
+  fBot.EventHandlers[etMessageNew] := @OnRawEvent;
+
+  aMessage := TJSONObject.Create;
+  aMessage.Add('text', 'Привет');
+  aMessage.Add('peer_id', Int64(100));
+  aMessage.Add('from_id', Int64(200));
+  aMessage.Add('conversation_message_id', Int64(1));
+
+  aObject := TJSONObject.Create;
+  aObject.Add('message', aMessage);
+
+  aUpdate := TJSONObject.Create;
+  try
+    aUpdate.Add('type', 'message_new');
+    aUpdate.Add('object', aObject);
+
+    fBot.ProcessUpdate(aUpdate);
+
+    CheckTrue(fMsgHandled,      'MessageHandler должен сработать при message_new');
+    CheckTrue(fRawEventHandled, 'EventHandlers[etMessageNew] тоже должен сработать');
+  finally
+    aUpdate.Free;
+  end;
+end;
+
+procedure TProcessUpdateMessageEventTests.TestUnknownEventTypeIgnored(const aMsg: TVKMessage);
+begin
+  fMsgHandled := True;
+end;
+
 initialization
   RegisterTest(TEventTypeHelperTests);
   RegisterTest(TMessageTests);
+  RegisterTest(TMessageEventTests);
   RegisterTest(TKeyboardTests);
   RegisterTest(TBotCommandTests);
   RegisterTest(TBotMessageHandlerTests);
   RegisterTest(TBotEventTests);
+  RegisterTest(TMessageEventHandlerTests);
+  RegisterTest(TProcessUpdateMessageEventTests);
   RegisterTest(TAPICallTests);
   RegisterTest(TIntegrationTests);
 
