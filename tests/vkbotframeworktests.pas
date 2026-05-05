@@ -124,6 +124,8 @@ type
     procedure TestAPICallWithParams;
     procedure TestSendMessageSuccess;
     procedure TestSendMessageWithKeyboard;
+    procedure TestEditMessageSuccess;
+    procedure TestEditMessageWithKeyboard;
     procedure TestAPICallReturnsCorrectData;
     procedure TestMultipleAPICallsLogged;
   end;
@@ -817,6 +819,43 @@ begin
     aKeyboard.Free;
   end;
 end;
+
+procedure TAPICallTests.TestEditMessageSuccess;
+var
+  aResult: Boolean;
+begin
+  TMockHTTPClient.AddResponse('messages.edit', '{"response":1}');
+
+  aResult := fBot.EditMessage(123, 456, 'Updated text');
+
+  CheckTrue(aResult, 'EditMessage должен вернуть True при успешном ответе');
+  CheckTrue(TMockHTTPClient.WasCalled('messages.edit'), 'Метод messages.edit должен быть вызван');
+end;
+
+procedure TAPICallTests.TestEditMessageWithKeyboard;
+var
+  aKeyboard: TVKKeyboard;
+  aKeyboardJSON: string;
+  aLastURL: string;
+begin
+  TMockHTTPClient.SetDefaultResponse('{"response":1}');
+
+  aKeyboard := TVKKeyboard.Create;
+  try
+    aKeyboard.AddButton('Button 1');
+    aKeyboardJSON := aKeyboard.Build;
+
+    fBot.EditMessage(999, 12345, 'Choose option', aKeyboardJSON);
+
+    aLastURL := TMockHTTPClient.GetLastURL;
+    CheckTrue(Pos('messages.edit', aLastURL) > 0, 'URL должен содержать метод messages.edit');
+    CheckTrue(Pos('message_id=12345', aLastURL) > 0, 'URL должен содержать параметр message_id');
+    CheckTrue(Pos('keyboard=', aLastURL) > 0, 'URL должен содержать параметр keyboard');
+  finally
+    aKeyboard.Free;
+  end;
+end;
+
 
 procedure TAPICallTests.TestAPICallReturnsCorrectData;
 var

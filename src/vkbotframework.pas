@@ -25,7 +25,6 @@ type
   TDeeplinkHandler = procedure(const aMsg: TVKMessage; const aRef, aRefSource: string) of object;
 
   { TVKMessage }
-
   {
     TVKMessage — JSON wrapper for incoming message.
   }
@@ -33,6 +32,7 @@ type
   private
     fData: TJSONObject;
     fBot: TVKBot;
+    function GetConversationMessageId: Int64;
     function GetText: string;
     function GetPeerID: Int64;
     function GetFromID: Int64;
@@ -43,16 +43,17 @@ type
     constructor Create(aBot: TVKBot; aData: TJSONObject);
 
     procedure Reply(const aText: string; const aKeyboard: string = '');
-    procedure Send(const aText: string; aPeerID: Int64 = 0;
-      const aKeyboard: string = '');
+    procedure Send(const aText: string; aPeerID: Int64 = 0; const aKeyboard: string = '');
 
-    property Text:      string read GetText;
-    property PeerID:    Int64  read GetPeerID;
-    property FromID:    Int64  read GetFromID;
-    property Payload:   string read GetPayload;
+    property ConversationMessageId: Int64  read GetConversationMessageId;
 
-    property Ref:       string read GetRef;
-    property RefSource: string read GetRefSource;
+    property Text:                  string read GetText;
+    property PeerID:                Int64  read GetPeerID;
+    property FromID:                Int64  read GetFromID;
+    property Payload:               string read GetPayload;
+
+    property Ref:                   string read GetRef;
+    property RefSource:             string read GetRefSource;
 
     property Data: TJSONObject read fData;
   end;
@@ -133,6 +134,7 @@ type
 
     { API methods }
     function SendMessage(aPeerID: Int64; const aText: string; const aKeyboard: string = ''): Boolean;
+    function EditMessage(aPeerID, aMessageID: Int64; const aText: string; const aKeyboard: string = ''): Boolean;
 
     property OnDeeplink: TDeeplinkHandler read fOnDeeplink write fOnDeeplink;
 
@@ -191,6 +193,11 @@ begin
   Result := fData.Get('text', EmptyStr);
 end;
 
+function TVKMessage.GetConversationMessageId: Int64;
+begin
+  Result := fData.Get('conversation_message_id', Integer(0));
+end;
+
 function TVKMessage.GetPeerID: Int64;
 begin
   Result := fData.Get('peer_id', Int64(0));
@@ -221,8 +228,7 @@ begin
   Send(aText, PeerID, aKeyboard);
 end;
 
-procedure TVKMessage.Send(const aText: string; aPeerID: Int64 = 0;
-  const aKeyboard: string = '');
+procedure TVKMessage.Send(const aText: string; aPeerID: Int64 = 0; const aKeyboard: string = '');
 begin
   fBot.SendMessage(specialize IfThen<Int64>(aPeerID = 0, PeerID, aPeerID), aText, aKeyboard);
 end;
@@ -593,13 +599,31 @@ begin
     aParams.Add('peer_id',   aPeerID);
     aParams.Add('message',   aText);
     aParams.Add('random_id', DateTimeToUnix(Now) * 1000 + Random(1000));
-    if aKeyboard <> '' then
+    if not aKeyboard.IsEmpty then
       aParams.Add('keyboard', aKeyboard);
     Result := Assigned(APICall('messages.send', aParams));
   finally
     aParams.Free;
   end;
 end;
+function TVKBot.EditMessage(aPeerID, aMessageID: Int64; const aText: string; const aKeyboard: string = ''): Boolean;
+var
+  aParams: TJSONObject;
+begin
+  Result  := False;
+  aParams := TJSONObject.Create;
+  try
+    aParams.Add('peer_id',    aPeerID);
+    aParams.Add('message_id', aMessageID);
+    aParams.Add('message',    aText);
+    if not aKeyboard.IsEmpty then
+      aParams.Add('keyboard', aKeyboard);
+    Result := Assigned(APICall('messages.edit', aParams));
+  finally
+    aParams.Free;
+  end;
+end;
+
 
 { TVKKeyboard }
 
