@@ -148,7 +148,7 @@ begin
     end;
     on E: Exception do
     begin
-      DoLog(llError, Format('Webhook processing error: %s', [E.Message]));
+      DoLog(llError, Format('Webhook processing error. %s:%s', [E.ClassName, E.Message]));
       Result := CreateWebhookErrorResponse(E.Message, VK_HTTP_INTERNAL_ERROR);
     end;
   end;

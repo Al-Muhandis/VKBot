@@ -187,6 +187,8 @@ type
     property MessageHandlers:      THandlerList             read fMessageHandlers;
     property MessageEventHandlers: TMessageEventHandlerList read fMessageEventHandlers;
     property OnLog: TOnLogEvent read fOnLog write fOnLog;
+
+    property RawResponse: TJSONData read fJSON write fJSON;
   end;
 
   { Keyboard builder }
@@ -385,7 +387,9 @@ begin
       Result := TJSONObject(fJSON).Find('response');
 
     if not Assigned(Result) then
-      DoLog(llError, Format('API call failed: %s, response: %s', [aMethod, aResponse]));
+      DoLog(llError, Format('API call failed: %s, response: %s', [aMethod, aResponse]))
+    else
+      DoLog(llDebug, Format('API call: %s, response: %s', [aMethod, aResponse]));
   finally
     aHTTPClient.Free;
   end;
