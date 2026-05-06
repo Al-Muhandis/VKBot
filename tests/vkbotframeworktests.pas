@@ -1,6 +1,7 @@
-{$mode objfpc}{$H+}{$J-}
-
 unit VKBotFrameworkTests;
+
+{$mode objfpc}{$H+}{$J-}
+{$codepage UTF8}
 
 interface
 
@@ -230,6 +231,74 @@ type
     procedure TestStringToEnum_UnknownType;
     procedure TestEnumToString_RoundTrip;
     procedure TestStringToEnum_CaseSensitivity;
+  end;
+
+  { TMessageReplyTests — unit tests for TVKMessageReply wrapper }
+  TMessageReplyTests = class(TTestCase)
+  private
+    fBot:       TMockVKBot;
+    fReplyData: TJSONObject;
+    fReply:     TVKMessageReply;
+  protected
+    procedure SetUp; override;
+    procedure TearDown; override;
+  published
+    procedure TestGetText;
+    procedure TestGetPeerID;
+    procedure TestGetFromID;
+    procedure TestGetMessageID;
+    procedure TestGetConversationMessageId;
+    procedure TestReplyCallsSendMessage;
+    procedure TestReplyUsesCorrectPeerID;
+    procedure TestSendWithExplicitPeerID;
+    procedure TestSendWithKeyboard;
+  end;
+
+  { TMessageReplyHandlerTests — ProcessMessageReply + AddMessageReplyHandler }
+  TMessageReplyHandlerTests = class(TTestCase)
+  private
+    fBot:            TTestVKBot;
+    fHandlerCalled:  Boolean;
+    fHandlerCount:   Integer;
+    fReceivedText:   string;
+    fReceivedPeerID: Int64;
+    fReceivedFromID: Int64;
+    procedure ReplyHandler(const aReply: TVKMessageReply);
+    procedure SecondReplyHandler(const {%H-}aReply: TVKMessageReply);
+  protected
+    procedure SetUp; override;
+    procedure TearDown; override;
+  published
+    procedure TestHandlerCalledOnMessageReply;
+    procedure TestHandlerReceivesCorrectData;
+    procedure TestMultipleHandlersCalled;
+    procedure TestNoHandlersDoesNotCrash;
+    procedure TestNilReplyObjectDoesNotCrash;
+  end;
+
+  { TProcessUpdateMessageReplyTests — ProcessUpdate behaviour for message_reply }
+  TProcessUpdateMessageReplyTests = class(TTestCase)
+  private
+    fBot:               TTestVKBot;
+    fMsgReplyHandled:   Boolean;
+    fRawEventHandled:   Boolean;
+    fReceivedText:      string;
+    fReceivedRawObject: TJSONObject;
+    procedure OnMessageReply(const aReply: TVKMessageReply);
+    procedure OnRawEvent(const aEvent: TJSONObject);
+    function  MakeMessageReplyUpdate: TJSONObject;
+  protected
+    procedure SetUp; override;
+    procedure TearDown; override;
+  published
+    { message_reply fires ProcessMessageReply handler }
+    procedure TestMessageReplyFiresSpecificHandler;
+    { message_reply ALSO fires generic EventHandlers[etMessageReply] }
+    procedure TestMessageReplyAlsoFiresGenericHandler;
+    { both fire in the same ProcessUpdate call }
+    procedure TestMessageReplyFiresBothHandlers;
+    { nil object does not crash }
+    procedure TestNilReplyObjectDoesNotCrash;
   end;
 
 implementation
@@ -1460,8 +1529,332 @@ begin
   fMsgHandled := True;
 end;
 
+{ TMessageReplyTests }
+
+procedure TMessageReplyTests.SetUp;
+begin
+  fBot := TMockVKBot.Create('test_token', 123456);
+  TMockHTTPClient.SetDefaultResponse('{"response":{"message_id":1}}');
+
+  fReplyData := TJSONObject.Create;
+  fReplyData.Add('id',                        Int64(555));
+  fReplyData.Add('peer_id',                   Int64(987654));
+  fReplyData.Add('from_id',                   Int64(111222));
+  fReplyData.Add('text',                       'Reply text');
+  fReplyData.Add('conversation_message_id',   Int64(42));
+
+  fReply := TVKMessageReply.Create(fBot, fReplyData);
+end;
+
+procedure TMessageReplyTests.TearDown;
+begin
+  fReply.Free;
+  fReplyData.Free;
+  fBot.Free;
+end;
+
+procedure TMessageReplyTests.TestGetText;
+begin
+  CheckEquals('Reply text', fReply.Text);
+end;
+
+procedure TMessageReplyTests.TestGetPeerID;
+begin
+  CheckEquals(Int64(987654), fReply.PeerID);
+end;
+
+procedure TMessageReplyTests.TestGetFromID;
+begin
+  CheckEquals(Int64(111222), fReply.FromID);
+end;
+
+procedure TMessageReplyTests.TestGetMessageID;
+begin
+  CheckEquals(Int64(555), fReply.MessageID);
+end;
+
+procedure TMessageReplyTests.TestGetConversationMessageId;
+begin
+  CheckEquals(Int64(42), fReply.ConversationMessageId);
+end;
+
+procedure TMessageReplyTests.TestReplyCallsSendMessage;
+begin
+  TMockHTTPClient.ClearCalls;
+  fReply.Reply('Ответ');
+  CheckTrue(TMockHTTPClient.GetCallCount > 0, 'Reply должен вызвать messages.send');
+end;
+
+procedure TMessageReplyTests.TestReplyUsesCorrectPeerID;
+begin
+  TMockHTTPClient.ClearCalls;
+  fReply.Reply('Ок');
+  CheckTrue(TMockHTTPClient.WasCalled('peer_id=987654'),
+    'Reply должен отправить на peer_id из message_reply');
+end;
+
+procedure TMessageReplyTests.TestSendWithExplicitPeerID;
+var
+  aLastURL: string;
+begin
+  fReply.Send('Тест', 555666);
+  aLastURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos('peer_id=555666', aLastURL) > 0, 'Send должен использовать явно указанный PeerID');
+end;
+
+procedure TMessageReplyTests.TestSendWithKeyboard;
+var
+  aKB: TVKKeyboard;
+  aLastURL: string;
+begin
+  aKB := TVKKeyboard.Create;
+  try
+    aKB.AddButton('Кнопка');
+    fReply.Send('Выбери', 0, aKB.Build);
+    aLastURL := TMockHTTPClient.GetLastURL;
+    CheckTrue(Pos('keyboard=', aLastURL) > 0, 'Send должен передать клавиатуру');
+  finally
+    aKB.Free;
+  end;
+end;
+
+{ TMessageReplyHandlerTests }
+
+procedure TMessageReplyHandlerTests.SetUp;
+begin
+  fBot           := TTestVKBot.Create('test_token', 123456);
+  TMockHTTPClient.SetDefaultResponse('{"response":{"message_id":1}}');
+  fHandlerCalled := False;
+  fHandlerCount  := 0;
+  fReceivedText  := '';
+  fReceivedPeerID := 0;
+  fReceivedFromID := 0;
+end;
+
+procedure TMessageReplyHandlerTests.TearDown;
+begin
+  fBot.Free;
+end;
+
+procedure TMessageReplyHandlerTests.ReplyHandler(const aReply: TVKMessageReply);
+begin
+  fHandlerCalled  := True;
+  Inc(fHandlerCount);
+  fReceivedText   := aReply.Text;
+  fReceivedPeerID := aReply.PeerID;
+  fReceivedFromID := aReply.FromID;
+end;
+
+procedure TMessageReplyHandlerTests.SecondReplyHandler(const aReply: TVKMessageReply);
+begin
+  Inc(fHandlerCount);
+end;
+
+procedure TMessageReplyHandlerTests.TestHandlerCalledOnMessageReply;
+var
+  aData: TJSONObject;
+begin
+  fBot.AddMessageReplyHandler(@ReplyHandler);
+
+  aData := TJSONObject.Create;
+  try
+    aData.Add('id',      Int64(1));
+    aData.Add('peer_id', Int64(100));
+    aData.Add('from_id', Int64(200));
+    aData.Add('text',    'Привет');
+    fBot.ProcessMessageReply(aData);
+    CheckTrue(fHandlerCalled, 'Обработчик message_reply должен быть вызван');
+  finally
+    aData.Free;
+  end;
+end;
+
+procedure TMessageReplyHandlerTests.TestHandlerReceivesCorrectData;
+var
+  aData: TJSONObject;
+begin
+  fBot.AddMessageReplyHandler(@ReplyHandler);
+
+  aData := TJSONObject.Create;
+  try
+    aData.Add('id',      Int64(7));
+    aData.Add('peer_id', Int64(8888));
+    aData.Add('from_id', Int64(9999));
+    aData.Add('text',    'Тестовый ответ');
+    fBot.ProcessMessageReply(aData);
+    CheckEquals('Тестовый ответ', fReceivedText,    'Text должен совпадать');
+    CheckEquals(Int64(8888),      fReceivedPeerID,  'PeerID должен совпадать');
+    CheckEquals(Int64(9999),      fReceivedFromID,  'FromID должен совпадать');
+  finally
+    aData.Free;
+  end;
+end;
+
+procedure TMessageReplyHandlerTests.TestMultipleHandlersCalled;
+var
+  aData: TJSONObject;
+begin
+  fBot.AddMessageReplyHandler(@ReplyHandler);
+  fBot.AddMessageReplyHandler(@SecondReplyHandler);
+
+  aData := TJSONObject.Create;
+  try
+    aData.Add('id',      Int64(1));
+    aData.Add('peer_id', Int64(1));
+    aData.Add('from_id', Int64(1));
+    aData.Add('text',    'Test');
+    fBot.ProcessMessageReply(aData);
+    CheckEquals(2, fHandlerCount, 'Оба обработчика должны сработать');
+  finally
+    aData.Free;
+  end;
+end;
+
+procedure TMessageReplyHandlerTests.TestNoHandlersDoesNotCrash;
+var
+  aData: TJSONObject;
+begin
+  { нет обработчиков — не должно быть исключений }
+  aData := TJSONObject.Create;
+  try
+    aData.Add('id',      Int64(1));
+    aData.Add('peer_id', Int64(1));
+    aData.Add('from_id', Int64(1));
+    aData.Add('text',    'Test');
+    fBot.ProcessMessageReply(aData);
+  finally
+    aData.Free;
+  end;
+end;
+
+procedure TMessageReplyHandlerTests.TestNilReplyObjectDoesNotCrash;
+begin
+  fBot.AddMessageReplyHandler(@ReplyHandler);
+  fBot.ProcessMessageReply(nil);
+  CheckFalse(fHandlerCalled, 'Обработчик не должен вызываться при nil');
+end;
+
+{ TProcessUpdateMessageReplyTests }
+
+procedure TProcessUpdateMessageReplyTests.SetUp;
+begin
+  fBot                := TTestVKBot.Create('test_token', 123456);
+  TMockHTTPClient.SetDefaultResponse('{"response":{"message_id":1}}');
+  fMsgReplyHandled    := False;
+  fRawEventHandled    := False;
+  fReceivedText       := '';
+  fReceivedRawObject  := nil;
+end;
+
+procedure TProcessUpdateMessageReplyTests.TearDown;
+begin
+  fReceivedRawObject.Free;
+  fBot.Free;
+end;
+
+procedure TProcessUpdateMessageReplyTests.OnMessageReply(const aReply: TVKMessageReply);
+begin
+  fMsgReplyHandled := True;
+  fReceivedText    := aReply.Text;
+end;
+
+procedure TProcessUpdateMessageReplyTests.OnRawEvent(const aEvent: TJSONObject);
+begin
+  fRawEventHandled   := True;
+  fReceivedRawObject := TJSONObject(aEvent.Clone);
+end;
+
+function TProcessUpdateMessageReplyTests.MakeMessageReplyUpdate: TJSONObject;
+var
+  aObject: TJSONObject;
+begin
+  aObject := TJSONObject.Create;
+  aObject.Add('id',                        Int64(101));
+  aObject.Add('peer_id',                   Int64(555));
+  aObject.Add('from_id',                   Int64(777));
+  aObject.Add('text',                       'Бот ответил');
+  aObject.Add('conversation_message_id',   Int64(9));
+
+  Result := TJSONObject.Create;
+  Result.Add('type',   'message_reply');
+  Result.Add('object', aObject);
+end;
+
+procedure TProcessUpdateMessageReplyTests.TestMessageReplyFiresSpecificHandler;
+var
+  aUpdate: TJSONObject;
+begin
+  fBot.AddMessageReplyHandler(@OnMessageReply);
+
+  aUpdate := MakeMessageReplyUpdate;
+  try
+    fBot.ProcessUpdate(aUpdate);
+    CheckTrue(fMsgReplyHandled,
+      'ProcessMessageReply-хендлер должен сработать при message_reply');
+    CheckEquals('Бот ответил', fReceivedText, 'Text должен быть передан корректно');
+  finally
+    aUpdate.Free;
+  end;
+end;
+
+procedure TProcessUpdateMessageReplyTests.TestMessageReplyAlsoFiresGenericHandler;
+var
+  aUpdate: TJSONObject;
+begin
+  fBot.EventHandlers[etMessageReply] := @OnRawEvent;
+
+  aUpdate := MakeMessageReplyUpdate;
+  try
+    fBot.ProcessUpdate(aUpdate);
+    CheckTrue(fRawEventHandled,
+      'Обобщённый EventHandlers[etMessageReply] должен также сработать');
+    CheckNotNull(fReceivedRawObject, 'Объект события должен быть передан');
+    CheckEquals(Int64(777), fReceivedRawObject.Get('from_id', Int64(0)));
+  finally
+    aUpdate.Free;
+  end;
+end;
+
+procedure TProcessUpdateMessageReplyTests.TestMessageReplyFiresBothHandlers;
+var
+  aUpdate: TJSONObject;
+begin
+  fBot.AddMessageReplyHandler(@OnMessageReply);
+  fBot.EventHandlers[etMessageReply] := @OnRawEvent;
+
+  aUpdate := MakeMessageReplyUpdate;
+  try
+    fBot.ProcessUpdate(aUpdate);
+    CheckTrue(fMsgReplyHandled, 'Специфичный хендлер должен сработать');
+    CheckTrue(fRawEventHandled, 'Обобщённый хендлер должен сработать');
+  finally
+    aUpdate.Free;
+  end;
+end;
+
+procedure TProcessUpdateMessageReplyTests.TestNilReplyObjectDoesNotCrash;
+var
+  aUpdate: TJSONObject;
+begin
+  fBot.AddMessageReplyHandler(@OnMessageReply);
+
+  { object = nil — ProcessUpdate должен выйти без краша }
+  aUpdate := TJSONObject.Create;
+  try
+    aUpdate.Add('type', 'message_reply');
+    { намеренно не добавляем 'object' }
+    fBot.ProcessUpdate(aUpdate);
+    CheckFalse(fMsgReplyHandled, 'Обработчик не должен сработать при отсутствующем object');
+  finally
+    aUpdate.Free;
+  end;
+end;
+
 initialization
   RegisterTest(TEventTypeHelperTests);
+  RegisterTest(TMessageReplyTests);
+  RegisterTest(TMessageReplyHandlerTests);
+  RegisterTest(TProcessUpdateMessageReplyTests);
   RegisterTest(TMessageTests);
   RegisterTest(TMessageEventTests);
   RegisterTest(TKeyboardTests);
