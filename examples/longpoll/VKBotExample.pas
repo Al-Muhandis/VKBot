@@ -31,10 +31,10 @@ begin
   aKeyboard := TVKKeyboard.Create(True);
   try
     aKeyboard
-      .AddButton('Помощь', bcPrimary, '{"command" : "help"}')
-      .AddButton('О боте', bcSecondary, '{"command" : "about"}')
+      .AddButton('Помощь', bcPrimary, btText, '{"command" : "help"}')
+      .AddButton('О боте', bcSecondary, btText, '{"command" : "about"}')
       .AddRow
-      .AddButton('Выход', bcNegative, '{"command" : "exit"}');
+      .AddButton('Выход', bcNegative, btText, '{"command" : "exit"}');
       
     aMsg.Reply('Привет! Я бот на FreePascal 🚀', aKeyboard.Build);
   finally
