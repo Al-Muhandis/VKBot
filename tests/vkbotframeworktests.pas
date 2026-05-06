@@ -93,7 +93,6 @@ type
     procedure TearDown; override;
     procedure DummyMessageHandler(const aMsg: TVKMessage);
   published
-    procedure TestOnMessageRegistration;
     procedure TestMessageHandlerCalledForNonCommand;
     procedure TestMessageHandlerNotCalledForHandledCommand;
   end;
@@ -151,7 +150,6 @@ type
   published
     procedure TestHandlerCalledOnMessageEvent;
     procedure TestHandlerReceivesCorrectData;
-    procedure TestMultipleHandlersCalled;
     procedure TestNoHandlersDoesNotCrash;
     procedure TestNilEventObjectDoesNotCrash;
   end;
@@ -271,7 +269,6 @@ type
   published
     procedure TestHandlerCalledOnMessageReply;
     procedure TestHandlerReceivesCorrectData;
-    procedure TestMultipleHandlersCalled;
     procedure TestNoHandlersDoesNotCrash;
     procedure TestNilReplyObjectDoesNotCrash;
   end;
@@ -657,7 +654,7 @@ var
   aMsgData: TJSONObject;
 begin
   fBot.CommandHandlers['test']:=@PayloadCommandHandler;
-  fBot.AddMessageHandler(@DummyMessageHandler);
+  fBot.OnMessage:=@DummyMessageHandler;
 
   aMsgData := TJSONObject.Create;
   try
@@ -774,17 +771,11 @@ begin
   fCmdCalled := True;
 end;
 
-procedure TBotMessageHandlerTests.TestOnMessageRegistration;
-begin
-  fBot.AddMessageHandler(@DummyMessageHandler);
-  CheckEquals(1, fBot.MessageHandlers.Size, 'Обработчик сообщений должен быть зарегистрирован');
-end;
-
 procedure TBotMessageHandlerTests.TestMessageHandlerCalledForNonCommand;
 var
   aMsgData: TJSONObject;
 begin
-  fBot.AddMessageHandler(@DummyMessageHandler);
+  fBot.OnMessage := @DummyMessageHandler;
 
   aMsgData := TJSONObject.Create;
   try
@@ -809,7 +800,7 @@ begin
   fHandlerCalled := False;
 
   fBot.CommandHandlers['test']:=@TestCmd;
-  fBot.AddMessageHandler(@DummyMessageHandler);
+  fBot.OnMessage := @DummyMessageHandler;
 
   aMsgData := TJSONObject.Create;
   aMsgData.Add('text', '/test');
@@ -1094,7 +1085,7 @@ procedure TIntegrationTests.TestMessageHandlerTriggersReply;
 var
   aMsgData: TJSONObject;
 begin
-  fBot.AddMessageHandler(@HandleMessage);
+  fBot.OnMessage := @HandleMessage;
 
   aMsgData := TJSONObject.Create;
   try
@@ -1304,7 +1295,7 @@ procedure TMessageEventHandlerTests.TestHandlerCalledOnMessageEvent;
 var
   aEvtData: TJSONObject;
 begin
-  fBot.AddMessageEventHandler(@EventHandler);
+  fBot.OnMessageEvent := @EventHandler;
 
   aEvtData := TJSONObject.Create;
   try
@@ -1324,7 +1315,7 @@ procedure TMessageEventHandlerTests.TestHandlerReceivesCorrectData;
 var
   aEvtData: TJSONObject;
 begin
-  fBot.AddMessageEventHandler(@EventHandler);
+  fBot.OnMessageEvent := @EventHandler;
 
   aEvtData := TJSONObject.Create;
   try
@@ -1337,26 +1328,6 @@ begin
     CheckEquals(Int64(9999),   fReceivedUserID,  'UserID должен совпадать');
     CheckEquals(Int64(8888),   fReceivedPeerID,  'PeerID должен совпадать');
     CheckEquals('deadbeef',    fReceivedEventID, 'EventID должен совпадать');
-  finally
-    aEvtData.Free;
-  end;
-end;
-
-procedure TMessageEventHandlerTests.TestMultipleHandlersCalled;
-var
-  aEvtData: TJSONObject;
-begin
-  fBot.AddMessageEventHandler(@EventHandler);
-  fBot.AddMessageEventHandler(@SecondEventHandler);
-
-  aEvtData := TJSONObject.Create;
-  try
-    aEvtData.Add('user_id', Int64(1));
-    aEvtData.Add('peer_id', Int64(1));
-    aEvtData.Add('event_id', 'x');
-    fBot.ProcessMessageEvent(aEvtData);
-
-    CheckEquals(2, fHandlerCount, 'Оба обработчика должны сработать');
   finally
     aEvtData.Free;
   end;
@@ -1380,7 +1351,7 @@ end;
 
 procedure TMessageEventHandlerTests.TestNilEventObjectDoesNotCrash;
 begin
-  fBot.AddMessageEventHandler(@EventHandler);
+  fBot.OnMessageEvent := @EventHandler;
   fBot.ProcessMessageEvent(nil);
   CheckFalse(fHandlerCalled, 'Обработчик не должен вызываться при nil');
 end;
@@ -1444,7 +1415,7 @@ procedure TProcessUpdateMessageEventTests.TestMessageEventFiresSpecificHandler;
 var
   aUpdate: TJSONObject;
 begin
-  fBot.AddMessageEventHandler(@OnMessageEvent);
+  fBot.OnMessageEvent := @OnMessageEvent;
 
   aUpdate := MakeMessageEventUpdate;
   try
@@ -1479,7 +1450,7 @@ procedure TProcessUpdateMessageEventTests.TestMessageEventFiresBothHandlers;
 var
   aUpdate: TJSONObject;
 begin
-  fBot.AddMessageEventHandler(@OnMessageEvent);
+  fBot.OnMessageEvent := @OnMessageEvent;
   fBot.EventHandlers[etMessageEvent] := @OnRawEvent;
 
   aUpdate := MakeMessageEventUpdate;
@@ -1498,7 +1469,7 @@ var
 begin
   fMsgHandled := False;
 
-  fBot.AddMessageHandler(@TestMessageHandler);
+  fBot.OnMessage := @TestMessageHandler;
   fBot.EventHandlers[etMessageNew] := @OnRawEvent;
 
   aMessage := TJSONObject.Create;
@@ -1654,7 +1625,7 @@ procedure TMessageReplyHandlerTests.TestHandlerCalledOnMessageReply;
 var
   aData: TJSONObject;
 begin
-  fBot.AddMessageReplyHandler(@ReplyHandler);
+  fBot.OnMessageReply := @ReplyHandler;
 
   aData := TJSONObject.Create;
   try
@@ -1673,7 +1644,7 @@ procedure TMessageReplyHandlerTests.TestHandlerReceivesCorrectData;
 var
   aData: TJSONObject;
 begin
-  fBot.AddMessageReplyHandler(@ReplyHandler);
+  fBot.OnMessageReply := @ReplyHandler;
 
   aData := TJSONObject.Create;
   try
@@ -1685,26 +1656,6 @@ begin
     CheckEquals('Тестовый ответ', fReceivedText,    'Text должен совпадать');
     CheckEquals(Int64(8888),      fReceivedPeerID,  'PeerID должен совпадать');
     CheckEquals(Int64(9999),      fReceivedFromID,  'FromID должен совпадать');
-  finally
-    aData.Free;
-  end;
-end;
-
-procedure TMessageReplyHandlerTests.TestMultipleHandlersCalled;
-var
-  aData: TJSONObject;
-begin
-  fBot.AddMessageReplyHandler(@ReplyHandler);
-  fBot.AddMessageReplyHandler(@SecondReplyHandler);
-
-  aData := TJSONObject.Create;
-  try
-    aData.Add('id',      Int64(1));
-    aData.Add('peer_id', Int64(1));
-    aData.Add('from_id', Int64(1));
-    aData.Add('text',    'Test');
-    fBot.ProcessMessageReply(aData);
-    CheckEquals(2, fHandlerCount, 'Оба обработчика должны сработать');
   finally
     aData.Free;
   end;
@@ -1729,7 +1680,7 @@ end;
 
 procedure TMessageReplyHandlerTests.TestNilReplyObjectDoesNotCrash;
 begin
-  fBot.AddMessageReplyHandler(@ReplyHandler);
+  fBot.OnMessageReply := @ReplyHandler;
   fBot.ProcessMessageReply(nil);
   CheckFalse(fHandlerCalled, 'Обработчик не должен вызываться при nil');
 end;
@@ -1784,7 +1735,7 @@ procedure TProcessUpdateMessageReplyTests.TestMessageReplyFiresSpecificHandler;
 var
   aUpdate: TJSONObject;
 begin
-  fBot.AddMessageReplyHandler(@OnMessageReply);
+  fBot.OnMessageReply := @OnMessageReply;
 
   aUpdate := MakeMessageReplyUpdate;
   try
@@ -1819,7 +1770,7 @@ procedure TProcessUpdateMessageReplyTests.TestMessageReplyFiresBothHandlers;
 var
   aUpdate: TJSONObject;
 begin
-  fBot.AddMessageReplyHandler(@OnMessageReply);
+  fBot.OnMessageReply := @OnMessageReply;
   fBot.EventHandlers[etMessageReply] := @OnRawEvent;
 
   aUpdate := MakeMessageReplyUpdate;
@@ -1836,7 +1787,7 @@ procedure TProcessUpdateMessageReplyTests.TestNilReplyObjectDoesNotCrash;
 var
   aUpdate: TJSONObject;
 begin
-  fBot.AddMessageReplyHandler(@OnMessageReply);
+  fBot.OnMessageReply := @OnMessageReply;
 
   { object = nil — ProcessUpdate должен выйти без краша }
   aUpdate := TJSONObject.Create;

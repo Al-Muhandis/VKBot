@@ -121,7 +121,7 @@ begin
     _Bot.OnLog:=@_Handler.OnLog;
     
     { Обработчик всех сообщений }
-    _Bot.AddMessageHandler(@_Handler.OnAnyMessage);
+    _Bot.OnMessage:=@_Handler.OnAnyMessage;
     
     { Обработчики событий }
     _Bot.EventHandlers[etWallPostNew]:=@_Handler.OnWallPost;

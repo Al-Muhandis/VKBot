@@ -208,7 +208,7 @@ var
   aResponse: TVKWebhookResponse;
 begin
   fHandlerCalled := False;
-  fBot.AddMessageHandler(@MsgHandler);
+  fBot.OnMessage := @MsgHandler;
 
   aResponse := fProcessor.ProcessWebhook(
     MakeWebhookJSON('message_new',
@@ -380,7 +380,7 @@ procedure TWebhookIntegrationTests.TestWebhookToMessageHandler;
 var
   aResponse: TVKWebhookResponse;
 begin
-  fBot.AddMessageHandler(@HandleAnyMessage);
+  fBot.OnMessage := @HandleAnyMessage;
 
   aResponse := fProcessor.ProcessWebhook(
     MakeWebhookJSON('message_new', '{"message":{"text":"Integration test","peer_id":333}}', 555666, 'secret_xyz'));
@@ -393,7 +393,7 @@ procedure TWebhookIntegrationTests.TestMultipleWebhookCalls;
 var
   aResponse1, aResponse2, aResponse3: TVKWebhookResponse;
 begin
-  fBot.AddMessageHandler(@HandleAnyMessage);
+  fBot.OnMessage := @HandleAnyMessage;
 
   aResponse1 := fProcessor.ProcessWebhook(
     MakeWebhookJSON('message_new', '{"message":{"text":"First","peer_id":1}}', 555666, 'secret_xyz'));

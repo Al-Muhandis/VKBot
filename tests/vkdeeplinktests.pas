@@ -412,7 +412,7 @@ end;
 procedure TVKBotDeeplinkDispatchTests.TestDispatch_NoHandlers_PlainPipelineRuns;
 begin
   { Нет deeplink-обработчиков — обычный pipeline работает как обычно }
-  fBot.AddMessageHandler(@OnAnyMessage);
+  fBot.OnMessage := @OnAnyMessage;
   SendMessageWithRef('Привет', 'some-ref');
   CheckTrue(fMessageHandlerCalled, 'MessageHandler должен сработать даже если нет deeplink-обработчиков');
 end;

@@ -143,9 +143,6 @@ type
 
   TCommandMap              = specialize TStringHashMap<TCommandHandler>;
   TEventMap                = specialize TEventTypeHashMap<TEventHandler>;
-  THandlerList             = specialize TVector<TMessageHandler>;
-  TMessageEventHandlerList = specialize TVector<TMessageEventHandler>;
-  TMessageReplyHandlerList = specialize TVector<TMessageReplyHandler>;
 
   { TVKBot }
   {
@@ -154,13 +151,13 @@ type
   TVKBot = class
   private
     fJSON: TJSONData;
+    fOnMessage: TMessageHandler;
+    fOnMessageEvent: TMessageEventHandler;
+    fOnMessageReply: TMessageReplyHandler;
     fToken: string;
     fGroupID: Int64;
     fAPIVersion: string;
     fCommands:             TCommandMap;
-    fMessageHandlers:      THandlerList;
-    fMessageEventHandlers: TMessageEventHandlerList;
-    fMessageReplyHandlers: TMessageReplyHandlerList;
     fEventHandlers:        TEventMap;
     fOnDeeplink: TDeeplinkHandler;
 
@@ -193,10 +190,6 @@ type
     property EventMap: TEventMap read fEventHandlers;
     property CommandMap: TCommandMap read fCommands;
   public
-    procedure AddMessageHandler(aHandler: TMessageHandler);
-    procedure AddMessageEventHandler(aHandler: TMessageEventHandler);
-    procedure AddMessageReplyHandler(aHandler: TMessageReplyHandler);
-
     constructor Create(const aToken: string; aGroupID: Int64 = 0);
     destructor Destroy; override;
 
@@ -222,10 +215,11 @@ type
       read GetEventHandlerByEnum write SetEventHandlerByEnum;
     property EventHandlersByName[const aEventType: String]: TEventHandler
       read GetEventHandlerByName write SetEventHandlerByName;
-    property MessageHandlers:      THandlerList             read fMessageHandlers;
-    property MessageEventHandlers: TMessageEventHandlerList read fMessageEventHandlers;
-    property MessageReplyHandlers: TMessageReplyHandlerList read fMessageReplyHandlers;
     property OnLog: TOnLogEvent read fOnLog write fOnLog;
+
+    property OnMessage:      TMessageHandler read fOnMessage write fOnMessage;               
+    property OnMessageReply: TMessageReplyHandler read fOnMessageReply write fOnMessageReply;
+    property OnMessageEvent: TMessageEventHandler read fOnMessageEvent write fOnMessageEvent;
 
     property RawResponse: TJSONData read fJSON write fJSON;
   end;
@@ -425,9 +419,6 @@ begin
   fRunning    := False;
 
   fCommands             := TCommandMap.Create;
-  fMessageHandlers      := THandlerList.Create;
-  fMessageEventHandlers := TMessageEventHandlerList.Create;
-  fMessageReplyHandlers := TMessageReplyHandlerList.Create;
   fEventHandlers        := TEventMap.Create;
 end;
 
@@ -435,17 +426,9 @@ destructor TVKBot.Destroy;
 begin
   Stop;
   fCommands.Free;
-  fMessageHandlers.Free;
-  fMessageEventHandlers.Free;
-  fMessageReplyHandlers.Free;
   fEventHandlers.Free;
   fJSON.Free;
   inherited;
-end;
-
-procedure TVKBot.AddMessageHandler(aHandler: TMessageHandler);
-begin
-  fMessageHandlers.PushBack(aHandler);
 end;
 
 function TVKBot.APICall(const aMethod: string; const aParams: TJSONObject): TJSONData;
@@ -634,9 +617,7 @@ var
   aCommand: string;
   aParts: TStringArray;
   aCmdHandler: TCommandHandler;
-  aMsgHandler: TMessageHandler;
   aArgs: TStringArray;
-  i: Integer;
 begin
   if not Assigned(aMessage) then Exit;
 
@@ -689,12 +670,8 @@ begin
       end;
     end;
 
-    if fMessageHandlers.Size > 0 then
-      for i := 0 to fMessageHandlers.Size - 1 do
-      begin
-        aMsgHandler := fMessageHandlers[i];
-        aMsgHandler(aMsg);
-      end;
+    if Assigned(fOnMessage) then
+      fOnMessage(aMsg);
 
   finally
     aMsg.Free;
@@ -704,53 +681,31 @@ end;
 procedure TVKBot.ProcessMessageEvent(const aEventObject: TJSONObject);
 var
   aEvt: TVKMessageEvent;
-  aHandler: TMessageEventHandler;
-  i: Integer;
 begin
   if not Assigned(aEventObject) then Exit;
 
   aEvt := TVKMessageEvent.Create(Self, aEventObject);
   try
-    if fMessageEventHandlers.Size > 0 then
-      for i := 0 to fMessageEventHandlers.Size - 1 do
-      begin
-        aHandler := fMessageEventHandlers[i];
-        aHandler(aEvt);
-      end;
+    if Assigned(fOnMessageEvent) then
+      fOnMessageEvent(aEvt);
   finally
     aEvt.Free;
   end;
 end;
 
-procedure TVKBot.AddMessageEventHandler(aHandler: TMessageEventHandler);
-begin
-  fMessageEventHandlers.PushBack(aHandler);
-end;
-
 procedure TVKBot.ProcessMessageReply(const aReplyObject: TJSONObject);
 var
   aReply: TVKMessageReply;
-  aHandler: TMessageReplyHandler;
-  i: Integer;
 begin
   if not Assigned(aReplyObject) then Exit;
 
   aReply := TVKMessageReply.Create(Self, aReplyObject);
   try
-    if fMessageReplyHandlers.Size > 0 then
-      for i := 0 to fMessageReplyHandlers.Size - 1 do
-      begin
-        aHandler := fMessageReplyHandlers[i];
-        aHandler(aReply);
-      end;
+    if Assigned(fOnMessageReply) then
+      fOnMessageReply(aReply);
   finally
     aReply.Free;
   end;
-end;
-
-procedure TVKBot.AddMessageReplyHandler(aHandler: TMessageReplyHandler);
-begin
-  fMessageReplyHandlers.PushBack(aHandler);
 end;
 
 procedure TVKBot.Start;
