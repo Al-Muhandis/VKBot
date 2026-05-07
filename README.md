@@ -28,9 +28,11 @@
 - Enum `TVKEventType` для типизированной подписки на события (например `etWallPostNew`).
 - Поддержка подписки как по enum, так и по имени события.
 
-### 3) Отправка сообщений и клавиатуры
+### 3) Отправка, редактирование и удаление сообщений
 
 - Отправка через `SendMessage` и методы `TVKMessage.Reply/Send`.
+- Редактирование через `EditMessage`.
+- Удаление через `DeleteMessage` (VK API `messages.delete`, есть перегрузка для одного и нескольких `message_id`, опционально `delete_for_all`).
 - Построитель клавиатур `TVKKeyboard`:
   - кнопки с цветами (`primary`, `secondary`, `negative`, `positive`),
   - payload,

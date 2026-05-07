@@ -203,6 +203,9 @@ type
     { API methods }
     function SendMessage(aPeerID: Int64; const aText: string; const aKeyboard: string = ''): Boolean;
     function EditMessage(aPeerID, aMessageID: Int64; const aText: string; const aKeyboard: string = ''): Boolean;
+    function DeleteMessage(aPeerID, aMessageID: Int64; aDeleteForAll: Boolean = False): Boolean; overload;
+    function DeleteMessage(aPeerID: Int64; const aMessageIDs: array of Int64;
+      aDeleteForAll: Boolean = False): Boolean; overload;
 
     property OnDeeplink: TDeeplinkHandler read fOnDeeplink write fOnDeeplink;
 
@@ -796,6 +799,41 @@ begin
     if not aKeyboard.IsEmpty then
       aParams.Add('keyboard', aKeyboard);
     Result := Assigned(APICall('messages.edit', aParams));
+  finally
+    aParams.Free;
+  end;
+end;
+function TVKBot.DeleteMessage(aPeerID, aMessageID: Int64; aDeleteForAll: Boolean = False): Boolean;
+begin
+  Result := DeleteMessage(aPeerID, [aMessageID], aDeleteForAll);
+end;
+
+function TVKBot.DeleteMessage(aPeerID: Int64; const aMessageIDs: array of Int64;
+  aDeleteForAll: Boolean = False): Boolean;
+var
+  aParams: TJSONObject;
+  i: Integer;
+  aMessageIDsParam: string;
+begin
+  Result := False;
+  if Length(aMessageIDs) = 0 then
+    Exit;
+
+  aMessageIDsParam := EmptyStr;
+  for i := Low(aMessageIDs) to High(aMessageIDs) do
+  begin
+    if not aMessageIDsParam.IsEmpty then
+      aMessageIDsParam += ',';
+    aMessageIDsParam += IntToStr(aMessageIDs[i]);
+  end;
+
+  aParams := TJSONObject.Create;
+  try
+    aParams.Add('peer_id', aPeerID);
+    aParams.Add('message_ids', aMessageIDsParam);
+    if aDeleteForAll then
+      aParams.Add('delete_for_all', 1);
+    Result := Assigned(APICall('messages.delete', aParams));
   finally
     aParams.Free;
   end;

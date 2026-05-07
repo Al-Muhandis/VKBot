@@ -197,6 +197,11 @@ type
     procedure TestSendMessageWithKeyboard;
     procedure TestEditMessageSuccess;
     procedure TestEditMessageWithKeyboard;
+    procedure TestDeleteMessageSuccess;
+    procedure TestDeleteMessageWithDeleteForAll;
+    procedure TestDeleteMultipleMessagesSuccess;
+    procedure TestDeleteMultipleMessagesWithDeleteForAll;
+    procedure TestDeleteMultipleMessagesEmptyList;
     procedure TestAPICallReturnsCorrectData;
     procedure TestMultipleAPICallsLogged;
   end;
@@ -986,6 +991,68 @@ begin
   finally
     aKeyboard.Free;
   end;
+end;
+
+procedure TAPICallTests.TestDeleteMessageSuccess;
+var
+  aResult: Boolean;
+begin
+  TMockHTTPClient.AddResponse('messages.delete', '{"response":{"456":1}}');
+
+  aResult := fBot.DeleteMessage(123, 456);
+
+  CheckTrue(aResult, 'DeleteMessage должен вернуть True при успешном ответе');
+  CheckTrue(TMockHTTPClient.WasCalled('messages.delete'), 'Метод messages.delete должен быть вызван');
+end;
+
+procedure TAPICallTests.TestDeleteMessageWithDeleteForAll;
+var
+  aLastURL: string;
+begin
+  TMockHTTPClient.SetDefaultResponse('{"response":{"12345":1}}');
+
+  fBot.DeleteMessage(999, 12345, True);
+
+  aLastURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos('messages.delete', aLastURL) > 0, 'URL должен содержать метод messages.delete');
+  CheckTrue(Pos('peer_id=999', aLastURL) > 0, 'URL должен содержать peer_id');
+  CheckTrue(Pos('message_ids=12345', aLastURL) > 0, 'URL должен содержать message_ids');
+  CheckTrue(Pos('delete_for_all=1', aLastURL) > 0, 'URL должен содержать delete_for_all');
+end;
+
+procedure TAPICallTests.TestDeleteMultipleMessagesSuccess;
+var
+  aResult: Boolean;
+begin
+  TMockHTTPClient.AddResponse('messages.delete', '{"response":{"101":1,"102":1,"103":1}}');
+
+  aResult := fBot.DeleteMessage(777, [101, 102, 103]);
+
+  CheckTrue(aResult, 'DeleteMessage(массив) должен вернуть True при успешном ответе');
+  CheckTrue(TMockHTTPClient.WasCalled('messages.delete'), 'Метод messages.delete должен быть вызван для массива id');
+end;
+
+procedure TAPICallTests.TestDeleteMultipleMessagesWithDeleteForAll;
+var
+  aLastURL: string;
+begin
+  TMockHTTPClient.SetDefaultResponse('{"response":{"201":1,"202":1}}');
+
+  fBot.DeleteMessage(555, [201, 202], True);
+
+  aLastURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos('messages.delete', aLastURL) > 0, 'URL должен содержать метод messages.delete');
+  CheckTrue(Pos('peer_id=555', aLastURL) > 0, 'URL должен содержать peer_id');
+  CheckTrue(Pos('message_ids=201,202', aLastURL) > 0, 'URL должен содержать список message_ids');
+  CheckTrue(Pos('delete_for_all=1', aLastURL) > 0, 'URL должен содержать delete_for_all');
+end;
+
+procedure TAPICallTests.TestDeleteMultipleMessagesEmptyList;
+begin
+  TMockHTTPClient.SetDefaultResponse('{"response":{}}');
+
+  CheckFalse(fBot.DeleteMessage(123, []), 'DeleteMessage(пустой массив) должен вернуть False');
+  CheckFalse(TMockHTTPClient.WasCalled('messages.delete'), 'При пустом массиве API не должен вызываться');
 end;
 
 
