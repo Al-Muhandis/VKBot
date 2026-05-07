@@ -206,6 +206,7 @@ type
     function DeleteMessage(aPeerID, aMessageID: Int64; aDeleteForAll: Boolean = False): Boolean; overload;
     function DeleteMessage(aPeerID: Int64; const aMessageIDs: array of Int64;
       aDeleteForAll: Boolean = False): Boolean; overload;
+    function GetMessagesUploadServer(const aType: string = 'doc'; aPeerID: Int64 = 0): TJSONData;
 
     property OnDeeplink: TDeeplinkHandler read fOnDeeplink write fOnDeeplink;
 
@@ -834,6 +835,22 @@ begin
     if aDeleteForAll then
       aParams.Add('delete_for_all', 1);
     Result := Assigned(APICall('messages.delete', aParams));
+  finally
+    aParams.Free;
+  end;
+end;
+
+function TVKBot.GetMessagesUploadServer(const aType: string = 'doc'; aPeerID: Int64 = 0): TJSONData;
+var
+  aParams: TJSONObject;
+begin
+  aParams := TJSONObject.Create;
+  try
+    aParams.Add('type', aType);
+    if aPeerID > 0 then
+      aParams.Add('peer_id', aPeerID);
+
+    Result := APICall('docs.getMessagesUploadServer', aParams);
   finally
     aParams.Free;
   end;
