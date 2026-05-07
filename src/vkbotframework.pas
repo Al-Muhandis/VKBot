@@ -207,6 +207,7 @@ type
     function DeleteMessage(aPeerID: Int64; const aMessageIDs: array of Int64;
       aDeleteForAll: Boolean = False): Boolean; overload;
     function GetMessagesUploadServer(const aType: string = 'doc'; aPeerID: Int64 = 0): TJSONData;
+    function DocsSave(const aFile: string; const aTitle: string = ''; const aTags: string = ''): TJSONData;
 
     property OnDeeplink: TDeeplinkHandler read fOnDeeplink write fOnDeeplink;
 
@@ -851,6 +852,24 @@ begin
       aParams.Add('peer_id', aPeerID);
 
     Result := APICall('docs.getMessagesUploadServer', aParams);
+  finally
+    aParams.Free;
+  end;
+end;
+
+function TVKBot.DocsSave(const aFile: string; const aTitle: string = ''; const aTags: string = ''): TJSONData;
+var
+  aParams: TJSONObject;
+begin
+  aParams := TJSONObject.Create;
+  try
+    aParams.Add('file', aFile);
+    if not aTitle.IsEmpty then
+      aParams.Add('title', aTitle);
+    if not aTags.IsEmpty then
+      aParams.Add('tags', aTags);
+
+    Result := APICall('docs.save', aParams);
   finally
     aParams.Free;
   end;

@@ -202,6 +202,8 @@ type
     procedure TestDeleteMultipleMessagesSuccess;
     procedure TestDeleteMultipleMessagesWithDeleteForAll;
     procedure TestDeleteMultipleMessagesEmptyList;
+    procedure TestDocsSaveSuccess;
+    procedure TestDocsSaveWithOptionalParams;
     procedure TestAPICallReturnsCorrectData;
     procedure TestMultipleAPICallsLogged;
   end;
@@ -1053,6 +1055,39 @@ begin
 
   CheckFalse(fBot.DeleteMessage(123, []), 'DeleteMessage(пустой массив) должен вернуть False');
   CheckFalse(TMockHTTPClient.WasCalled('messages.delete'), 'При пустом массиве API не должен вызываться');
+end;
+
+procedure TAPICallTests.TestDocsSaveSuccess;
+var
+  aResponse: TJSONData;
+begin
+  TMockHTTPClient.AddResponse('docs.save', '{"response":{"type":"doc","doc":{"id":1}}}');
+
+  aResponse := fBot.DocsSave('uploaded_file_token');
+  try
+    CheckNotNull(aResponse, 'DocsSave должен вернуть данные ответа');
+    CheckTrue(TMockHTTPClient.WasCalled('docs.save'), 'Метод docs.save должен быть вызван');
+  finally
+    //aResponse.Free; frees in fBot
+  end;
+end;
+
+procedure TAPICallTests.TestDocsSaveWithOptionalParams;
+var
+  aLastURL: string;
+begin
+  TMockHTTPClient.SetDefaultResponse('{"response":{"type":"doc","doc":{"id":2}}}');
+
+  fBot.DocsSave('uploaded_file_token', 'My title', 'tag1,tag2');
+  try
+    aLastURL := TMockHTTPClient.GetLastURL;
+    CheckTrue(Pos('docs.save', aLastURL) > 0, 'URL должен содержать метод docs.save');
+    CheckTrue(Pos('file=uploaded%5Ffile%5Ftoken', aLastURL) > 0, 'URL должен содержать параметр file');
+    CheckTrue(Pos('title=My', aLastURL) > 0, 'URL должен содержать параметр title');
+    CheckTrue(Pos('tags=tag1,tag2', aLastURL) > 0, 'URL должен содержать параметр tags');
+  finally
+    //aResponse.Free; frees in fBot
+  end;
 end;
 
 
