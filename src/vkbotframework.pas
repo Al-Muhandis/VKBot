@@ -46,8 +46,8 @@ type
   public
     constructor Create(aBot: TVKBot; aData: TJSONObject);
 
-    procedure Reply(const aText: string; const aKeyboard: string = '');
-    procedure Send(const aText: string; aPeerID: Int64 = 0; const aKeyboard: string = '');
+    procedure Reply(const aText: string; const aKeyboard: string = ''; const aAttachment: string = '');
+    procedure Send(const aText: string; aPeerID: Int64 = 0; const aKeyboard: string = ''; const aAttachment: string = '');
 
     property ConversationMessageId: Int64  read GetConversationMessageId;
 
@@ -81,7 +81,7 @@ type
     constructor Create(aBot: TVKBot; aData: TJSONObject);
 
     { Send a text message back to the same peer }
-    procedure Reply(const aText: string; const aKeyboard: string = '');
+    procedure Reply(const aText: string; const aKeyboard: string = ''; const aAttachment: string = '');
 
     property UserID:                 Int64       read GetUserID;
     property PeerID:                 Int64       read GetPeerID;
@@ -113,8 +113,8 @@ type
     constructor Create(aBot: TVKBot; aData: TJSONObject);
 
     { Send a text message back to the same peer }
-    procedure Reply(const aText: string; const aKeyboard: string = '');
-    procedure Send(const aText: string; aPeerID: Int64 = 0; const aKeyboard: string = '');
+    procedure Reply(const aText: string; const aKeyboard: string = ''; const aAttachment: string = '');
+    procedure Send(const aText: string; aPeerID: Int64 = 0; const aKeyboard: string = ''; const aAttachment: string = '');
 
     property ConversationMessageId: Int64  read GetConversationMessageId;
     property MessageID:             Int64  read GetMessageID;
@@ -201,7 +201,7 @@ type
     procedure ProcessUpdate(const aUpdate: TJSONObject);
 
     { API methods }
-    function SendMessage(aPeerID: Int64; const aText: string; const aKeyboard: string = ''): Boolean;
+    function SendMessage(aPeerID: Int64; const aText: string; const aKeyboard: string = ''; const aAttachment: string = ''): Boolean;
     function EditMessage(aPeerID, aMessageID: Int64; const aText: string; const aKeyboard: string = ''): Boolean;
     function DeleteMessage(aPeerID, aMessageID: Int64; aDeleteForAll: Boolean = False): Boolean; overload;
     function DeleteMessage(aPeerID: Int64; const aMessageIDs: array of Int64;
@@ -301,14 +301,14 @@ begin
   Result := fData.Get('ref_source', EmptyStr);
 end;
 
-procedure TVKMessage.Reply(const aText: string; const aKeyboard: string = '');
+procedure TVKMessage.Reply(const aText: string; const aKeyboard: string = ''; const aAttachment: string = '');
 begin
-  Send(aText, PeerID, aKeyboard);
+  Send(aText, PeerID, aKeyboard, aAttachment);
 end;
 
-procedure TVKMessage.Send(const aText: string; aPeerID: Int64 = 0; const aKeyboard: string = '');
+procedure TVKMessage.Send(const aText: string; aPeerID: Int64 = 0; const aKeyboard: string = ''; const aAttachment: string = '');
 begin
-  fBot.SendMessage(specialize IfThen<Int64>(aPeerID = 0, PeerID, aPeerID), aText, aKeyboard);
+  fBot.SendMessage(specialize IfThen<Int64>(aPeerID = 0, PeerID, aPeerID), aText, aKeyboard, aAttachment);
 end;
 
 { TVKMessageEvent }
@@ -345,9 +345,9 @@ begin
   Result := fData.Get('payload', TJSONObject(nil));
 end;
 
-procedure TVKMessageEvent.Reply(const aText: string; const aKeyboard: string = '');
+procedure TVKMessageEvent.Reply(const aText: string; const aKeyboard: string = ''; const aAttachment: string = '');
 begin
-  fBot.SendMessage(PeerID, aText, aKeyboard);
+  fBot.SendMessage(PeerID, aText, aKeyboard, aAttachment);
 end;
 
 { TVKMessageReply }
@@ -384,14 +384,14 @@ begin
   Result := fData.Get('from_id', Int64(0));
 end;
 
-procedure TVKMessageReply.Reply(const aText: string; const aKeyboard: string = '');
+procedure TVKMessageReply.Reply(const aText: string; const aKeyboard: string = ''; const aAttachment: string = '');
 begin
-  Send(aText, PeerID, aKeyboard);
+  Send(aText, PeerID, aKeyboard, aAttachment);
 end;
 
-procedure TVKMessageReply.Send(const aText: string; aPeerID: Int64 = 0; const aKeyboard: string = '');
+procedure TVKMessageReply.Send(const aText: string; aPeerID: Int64 = 0; const aKeyboard: string = ''; const aAttachment: string = '');
 begin
-  fBot.SendMessage(specialize IfThen<Int64>(aPeerID = 0, PeerID, aPeerID), aText, aKeyboard);
+  fBot.SendMessage(specialize IfThen<Int64>(aPeerID = 0, PeerID, aPeerID), aText, aKeyboard, aAttachment);
 end;
 
 { TStringHash }
@@ -771,7 +771,7 @@ begin
   fRunning := False;
 end;
 
-function TVKBot.SendMessage(aPeerID: Int64; const aText: string; const aKeyboard: string = ''): Boolean;
+function TVKBot.SendMessage(aPeerID: Int64; const aText: string; const aKeyboard: string = ''; const aAttachment: string = ''): Boolean;
 var
   aParams: TJSONObject;
 begin
@@ -783,6 +783,8 @@ begin
     aParams.Add('random_id', DateTimeToUnix(Now) * 1000 + Random(1000));
     if not aKeyboard.IsEmpty then
       aParams.Add('keyboard', aKeyboard);
+    if not aAttachment.IsEmpty then
+      aParams.Add('attachment', aAttachment);
     Result := Assigned(APICall('messages.send', aParams));
   finally
     aParams.Free;

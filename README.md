@@ -11,7 +11,7 @@
 - `src/vkbotframework.pas` — базовый класс `TVKBot`, обработка команд/событий, отправка сообщений, клавиатуры.
 - `src/vkwebhook.pas` — процессор webhook-запросов (`TVKWebhookProcessor`) с валидацией `secret` и `group_id`.
 - `src/vktypes.pas` — типы событий, уровни логирования, константы API и структуры ответов webhook.
-- `examples/longpoll` — пример консольного бота в режиме Long Poll.
+- `examples/longpoll` — примеры консольных ботов в режиме Long Poll (включая полный цикл загрузки файла и отправки пользователю).
 - `examples/webhook` — примеры интеграции с `fpWeb` и Brook.
 - `tests` — unit- и интеграционные тесты на `fpcunit`.
 

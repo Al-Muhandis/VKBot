@@ -195,6 +195,7 @@ type
     procedure TestAPICallWithParams;
     procedure TestSendMessageSuccess;
     procedure TestSendMessageWithKeyboard;
+    procedure TestSendMessageWithAttachment;
     procedure TestEditMessageSuccess;
     procedure TestEditMessageWithKeyboard;
     procedure TestDeleteMessageSuccess;
@@ -957,6 +958,18 @@ begin
   finally
     aKeyboard.Free;
   end;
+end;
+
+procedure TAPICallTests.TestSendMessageWithAttachment;
+var
+  aLastURL: string;
+begin
+  TMockHTTPClient.SetDefaultResponse('{"response":5678}');
+
+  fBot.SendMessage(999, 'Photo attached', '', 'photo1_2');
+
+  aLastURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos('attachment=photo1%5F2', aLastURL) > 0, 'URL должен содержать параметр attachment');
 end;
 
 procedure TAPICallTests.TestEditMessageSuccess;

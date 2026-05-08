@@ -16,6 +16,7 @@ type
     procedure OnAnyMessage(const {%H-}aMsg: TVKMessage);
     procedure OnEcho(const aMsg: TVKMessage; const aArgs: TStringArray);
     procedure OnHelp(const aMsg: TVKMessage; const {%H-}aArgs: TStringArray);
+    procedure OnPhoto(const aMsg: TVKMessage; const {%H-}aArgs: TStringArray);
     procedure OnLog({%H-}aLevel: TLogLevel; const aMessage: string);
     procedure OnStart(const aMsg: TVKMessage; const {%H-}aArgs: TStringArray);
     procedure OnWallPost(const {%H-}aEvent: TJSONObject);
@@ -48,8 +49,14 @@ begin
     'Available commands:' + LineEnding +
     '/start - Start work' + LineEnding +
     '/help - Help' + LineEnding +
-    '/echo <текст> - Repeat text'
+    '/echo <текст> - Repeat text' + LineEnding +
+    '/photo - Send message with attachment example'
   );
+end;
+
+procedure TExampleHandler.OnPhoto(const aMsg: TVKMessage; const aArgs: TStringArray);
+begin
+  aMsg.Reply('Пример сообщения с вложением photo123456_789012', '', 'photo123456_789012');
 end;
 
 procedure TExampleHandler.OnLog(aLevel: TLogLevel; const aMessage: string);
@@ -118,6 +125,7 @@ begin
     _Bot.CommandHandlers['start']:=@_Handler.OnStart;
     _Bot.CommandHandlers['help']:=@_Handler.OnHelp;
     _Bot.CommandHandlers['echo']:=@_Handler.OnEcho;
+    _Bot.CommandHandlers['photo']:=@_Handler.OnPhoto;
     _Bot.OnLog:=@_Handler.OnLog;
     
     { Обработчик всех сообщений }
