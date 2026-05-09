@@ -171,11 +171,18 @@ function CreateWebhookConfirmationResponse(const aConfirmationCode: string): TVK
 function CreateWebhookErrorResponse(const aError: string;
   aHTTPStatus: Integer = VK_HTTP_INTERNAL_ERROR): TVKWebhookResponse;
 
+function VKUserLink(aUser: Int64): String; inline;
+
 implementation
 
 uses
   fphttpclient
   ;
+
+function VKUserLink(aUser: Int64): String;
+begin
+  Result:=Format('https://vk.com/id%d', [aUser]);
+end;
 
 { Helper: string → enum }
 function VKEventTypeFromString(const aType: string): TVKEventType;
