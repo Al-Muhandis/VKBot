@@ -214,8 +214,8 @@ type
 
     property OnDeeplink: TDeeplinkHandler read fOnDeeplink write fOnDeeplink;
 
-    property Token:   string  read fToken;
-    property GroupID: Int64   read fGroupID;
+    property Token:   string  read fToken write fToken;
+    property GroupID: Int64   read fGroupID write fGroupID;
     property Running: Boolean read fRunning;
 
     property CommandHandlers[const aCommand: string]: TCommandHandler read GetCommandHandler write SetCommandHandler;
