@@ -12,7 +12,7 @@ type
 
   TExampleVKBot = class(TVKBot)
   public
-    procedure BotLog(aLevel: TLogLevel; const aMessage: string);
+    procedure BotLog({%H-}aLevel: TLogLevel; const aMessage: string);
   end;
 
 function UploadDocumentToVK(const aUploadURL, aFileName: string): string;
@@ -106,7 +106,7 @@ begin
   try
     Bot.OnLog:=@Bot.BotLog;
     { 1) Получаем upload_url через docs.getMessagesUploadServer }
-    UploadServerResponse := Bot.GetMessagesUploadServer('doc', TargetPeerID);
+    UploadServerResponse := Bot.GetMessagesUploadServer(dfDoc, TargetPeerID);
     try
       if not Assigned(UploadServerResponse) then
         raise Exception.Create('Failed to get Upload url');

@@ -144,6 +144,8 @@ type
   TCommandMap              = specialize TStringHashMap<TCommandHandler>;
   TEventMap                = specialize TEventTypeHashMap<TEventHandler>;
 
+  TDocFileType = (dfUnspecified, dfDoc, dfAudioMessage);
+
   { TVKBot }
   {
     TVKBot — main bot class.
@@ -206,7 +208,7 @@ type
     function DeleteMessage(aPeerID, aMessageID: Int64; aDeleteForAll: Boolean = False): Boolean; overload;
     function DeleteMessage(aPeerID: Int64; const aMessageIDs: array of Int64;
       aDeleteForAll: Boolean = False): Boolean; overload;
-    function GetMessagesUploadServer(const aType: string = 'doc'; aPeerID: Int64 = 0): TJSONData;
+    function GetMessagesUploadServer(const aType: TDocFileType = dfUnspecified; aPeerID: Int64 = 0): TJSONData;
     function DocsSave(const aFile: string; const aTitle: string = ''; const aTags: string = ''): TJSONData;
     function UsersGet(const aUserIDs: string; const aFields: string = ''): TJSONData;
 
@@ -244,7 +246,7 @@ type
     destructor Destroy; override;
 
     function AddButton(const aLabel: string; aColor: TVKButtonColor=bcSecondary; aType: TVKButtonType=btText;
-      const aPayload: string=''): TVKKeyboard;
+      const aPayload: string=''; const aLink: String = ''): TVKKeyboard;
     function AddRow: TVKKeyboard;
     function Build: string;
 
@@ -844,13 +846,16 @@ begin
   end;
 end;
 
-function TVKBot.GetMessagesUploadServer(const aType: string = 'doc'; aPeerID: Int64 = 0): TJSONData;
+function TVKBot.GetMessagesUploadServer(const aType: TDocFileType; aPeerID: Int64): TJSONData;
 var
   aParams: TJSONObject;
 begin
   aParams := TJSONObject.Create;
   try
-    aParams.Add('type', aType);
+    case aType of
+      dfDoc:   aParams.Add('type', 'doc');
+      dfAudioMessage: aParams.Add('type', 'audio_message');
+    end;
     if aPeerID > 0 then
       aParams.Add('peer_id', aPeerID);
 
@@ -914,7 +919,7 @@ begin
 end;
 
 function TVKKeyboard.AddButton(const aLabel: string; aColor: TVKButtonColor; aType: TVKButtonType;
-  const aPayload: string): TVKKeyboard;
+  const aPayload: string; const aLink: String): TVKKeyboard;
 var
   aCurrentRow: TJSONArray;
   aButton, aAction: TJSONObject;
@@ -926,8 +931,10 @@ begin
   aAction := TJSONObject.Create;
   aAction.Add('type', VKButtonTypeToString(aType));
   aAction.Add('label', aLabel);
-  if aPayload <> '' then
+  if not aPayload.IsEmpty then
     aAction.Add('payload', aPayload);
+  if not aLink.IsEmpty then
+    aAction.Add('link', aLink);
   aButton.Add('action', aAction);
   aButton.Add('color', VKButtonColorToString(aColor));
   aCurrentRow.Add(aButton);
