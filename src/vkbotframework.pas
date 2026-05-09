@@ -208,6 +208,7 @@ type
       aDeleteForAll: Boolean = False): Boolean; overload;
     function GetMessagesUploadServer(const aType: string = 'doc'; aPeerID: Int64 = 0): TJSONData;
     function DocsSave(const aFile: string; const aTitle: string = ''; const aTags: string = ''): TJSONData;
+    function UsersGet(const aUserIDs: string; const aFields: string = ''): TJSONData;
 
     property OnDeeplink: TDeeplinkHandler read fOnDeeplink write fOnDeeplink;
 
@@ -872,6 +873,23 @@ begin
       aParams.Add('tags', aTags);
 
     Result := APICall('docs.save', aParams);
+  finally
+    aParams.Free;
+  end;
+end;
+
+function TVKBot.UsersGet(const aUserIDs: string; const aFields: string = ''): TJSONData;
+var
+  aParams: TJSONObject;
+begin
+  aParams := TJSONObject.Create;
+  try
+    if not aUserIDs.IsEmpty then
+      aParams.Add('user_ids', aUserIDs);
+    if not aFields.IsEmpty then
+      aParams.Add('fields', aFields);
+
+    Result := APICall('users.get', aParams);
   finally
     aParams.Free;
   end;

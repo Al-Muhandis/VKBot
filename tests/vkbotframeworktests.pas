@@ -205,6 +205,8 @@ type
     procedure TestDeleteMultipleMessagesEmptyList;
     procedure TestDocsSaveSuccess;
     procedure TestDocsSaveWithOptionalParams;
+    procedure TestUsersGetSuccess;
+    procedure TestUsersGetWithFields;
     procedure TestAPICallReturnsCorrectData;
     procedure TestMultipleAPICallsLogged;
   end;
@@ -1101,6 +1103,35 @@ begin
   finally
     //aResponse.Free; frees in fBot
   end;
+end;
+
+procedure TAPICallTests.TestUsersGetSuccess;
+var
+  aResponse: TJSONData;
+begin
+  TMockHTTPClient.AddResponse('users.get', '{"response":[{"id":1,"first_name":"Ivan","last_name":"Ivanov"}]}');
+
+  aResponse := fBot.UsersGet('1');
+  try
+    CheckNotNull(aResponse, 'UsersGet должен вернуть данные ответа');
+    CheckTrue(TMockHTTPClient.WasCalled('users.get'), 'Метод users.get должен быть вызван');
+  finally
+    //aResponse.Free; frees in fBot
+  end;
+end;
+
+procedure TAPICallTests.TestUsersGetWithFields;
+var
+  aLastURL: string;
+begin
+  TMockHTTPClient.SetDefaultResponse('{"response":[{"id":1,"photo_200":"https://example.com/p.jpg"}]}');
+
+  fBot.UsersGet('1', 'photo_200,city');
+
+  aLastURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos('users.get', aLastURL) > 0, 'URL должен содержать метод users.get');
+  CheckTrue(Pos('user_ids=1', aLastURL) > 0, 'URL должен содержать параметр user_ids');
+  CheckTrue(Pos('fields=photo%5F200,city', aLastURL) > 0, 'URL должен содержать параметр fields');
 end;
 
 
