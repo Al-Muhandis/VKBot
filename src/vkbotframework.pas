@@ -203,8 +203,12 @@ type
     procedure ProcessUpdate(const aUpdate: TJSONObject);
 
     { API methods }
-    function SendMessage(aPeerID: Int64; const aText: string; const aKeyboard: string = ''; const aAttachment: string = ''): Boolean;
-    function EditMessage(aPeerID, aMessageID: Int64; const aText: string; const aKeyboard: string = ''): Boolean;
+    function SendMessage(aPeerID: Int64; const aText: string; const aKeyboard: string = '';
+      const aAttachment: string = ''): Boolean;
+    { You can specify MessageID or CMID (conversation_message_id) to indentify message to edit.
+    For example You can pass MessageID as 0 and CMID as some nonzero value }
+    function EditMessage(aPeerID, aMessageID: Int64; const aText: string; aCMID: Int64;
+      const aKeyboard: string = ''): Boolean;
     function DeleteMessage(aPeerID, aMessageID: Int64; aDeleteForAll: Boolean = False): Boolean; overload;
     function DeleteMessage(aPeerID: Int64; const aMessageIDs: array of Int64;
       aDeleteForAll: Boolean = False): Boolean; overload;
@@ -793,7 +797,8 @@ begin
     aParams.Free;
   end;
 end;
-function TVKBot.EditMessage(aPeerID, aMessageID: Int64; const aText: string; const aKeyboard: string = ''): Boolean;
+function TVKBot.EditMessage(aPeerID, aMessageID: Int64; const aText: string; aCMID: Int64; const aKeyboard: string
+  ): Boolean;
 var
   aParams: TJSONObject;
 begin
@@ -801,7 +806,10 @@ begin
   aParams := TJSONObject.Create;
   try
     aParams.Add('peer_id',    aPeerID);
-    aParams.Add('message_id', aMessageID);
+    if aMessageID<>0 then
+      aParams.Add('message_id', aMessageID);
+    if aCMID<>0 then
+      aParams.Add('cmid', aCMID);
     aParams.Add('message',    aText);
     if not aKeyboard.IsEmpty then
       aParams.Add('keyboard', aKeyboard);
@@ -961,5 +969,8 @@ begin
     aKeyboard.Free;
   end;
 end;
+
+initialization
+  Randomize;
 
 end.
