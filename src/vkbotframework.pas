@@ -84,7 +84,7 @@ type
     procedure Reply(const aText: string; const aKeyboard: string = ''; const aAttachment: string = '');
     { Acknowledge/callback answer for inline button click (messages.sendMessageEventAnswer) }
     function Answer(const aType: TVKEventDataType = dtShowSnackbar; const aText: string = '';
-      const aLink: string = ''): Boolean;
+      const aKeyboard: String = ''; const aLink: string = ''): Boolean;
 
     property UserID:                 Int64       read GetUserID;
     property PeerID:                 Int64       read GetPeerID;
@@ -216,7 +216,8 @@ type
     function DeleteMessage(aPeerID: Int64; const aMessageIDs: array of Int64;
       aDeleteForAll: Boolean = False): Boolean; overload;
     function SendMessageEventAnswer(aUserID, aPeerID: Int64; const aEventID: string;
-      const aType: TVKEventDataType = dtShowSnackbar; const aText: string = ''; const aLink: string = ''): Boolean;
+      const aType: TVKEventDataType = dtShowSnackbar; const aText: string = ''; const aKeyboard: String = '';
+      const aLink: string = ''): Boolean;
     function GetMessagesUploadServer(const aType: TDocFileType = dfUnspecified; aPeerID: Int64 = 0): TJSONData;
     function DocsSave(const aFile: string; const aTitle: string = ''; const aTags: string = ''): TJSONData;
     function UsersGet(const aUserIDs: string; const aFields: string = ''): TJSONData;
@@ -362,9 +363,10 @@ begin
   fBot.SendMessage(PeerID, aText, aKeyboard, aAttachment);
 end;
 
-function TVKMessageEvent.Answer(const aType: TVKEventDataType; const aText: string; const aLink: string): Boolean;
+function TVKMessageEvent.Answer(const aType: TVKEventDataType; const aText: string; const aKeyboard: String;
+  const aLink: string): Boolean;
 begin
-  Result := fBot.SendMessageEventAnswer(UserID, PeerID, EventID, aType, aText, aLink);
+  Result := fBot.SendMessageEventAnswer(UserID, PeerID, EventID, aType, aText, aKeyboard, aLink);
 end;
 
 { TVKMessageReply }
@@ -865,7 +867,7 @@ begin
 end;
 
 function TVKBot.SendMessageEventAnswer(aUserID, aPeerID: Int64; const aEventID: string; const aType: TVKEventDataType;
-  const aText: string; const aLink: string): Boolean;
+  const aText: string; const aKeyboard: String; const aLink: string): Boolean;
 var
   aParams: TJSONObject;
   aEventData: TJSONObject;
@@ -888,7 +890,9 @@ begin
       if not aText.IsEmpty then
         aEventData.Add('text', aText);
       if not aLink.IsEmpty then
-        aEventData.Add('link', aLink);
+        aEventData.Add('link', aLink); 
+      if not aKeyboard.IsEmpty then
+        aEventData.Add('keyboard', aKeyboard);
       aParams.Add('event_data', aEventData.AsJSON);
       aEventData.Free;
     end;
