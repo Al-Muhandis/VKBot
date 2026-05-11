@@ -75,6 +75,16 @@ type
     btCallback  // callback
   );
 
+  TVKEventDataType = ( 
+    dtUnspecified,   //
+    dtCloseKeyboard, // close_keyboard
+    dtShowSnackbar,  // show_snackbar
+    dtOpenLink,      // open_link    
+    dtOpenApp,       // open_app
+    dtEditMessage,   // edit_message
+    dtStartFlow      // start_flow
+  );
+
   { Webhook request data structure }
   TVKWebhookRequest = record
     RawBody: string;
@@ -163,6 +173,7 @@ function VKEventTypeFromString(const aType: string): TVKEventType;
 function VKEventTypeToString(aType: TVKEventType): string;
 function VKButtonColorToString(aColor: TVKButtonColor): string;      
 function VKButtonTypeToString(aType: TVKButtonType): string;
+function VKEventDataTypeToString(aType: TVKEventDataType): String;
 
 
 { Webhook helpers }
@@ -275,6 +286,14 @@ end;
 function VKButtonTypeToString(aType: TVKButtonType): string;
 const
   aTypes: array[TVKButtonType] of string = ('text', 'location', 'vkpay', 'open_link', 'open_app', 'callback');
+begin
+  Result := aTypes[aType];
+end;
+
+function VKEventDataTypeToString(aType: TVKEventDataType): String;
+const
+  aTypes: array[TVKEventDataType] of String = ('', 'close_keyboard', 'show_snackbar', 'open_link', 'open_app',
+    'edit_message', 'start_flow');
 begin
   Result := aTypes[aType];
 end;

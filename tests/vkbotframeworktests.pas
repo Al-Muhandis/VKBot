@@ -131,6 +131,8 @@ type
     procedure TestGetPayloadNil;
     procedure TestReplyCallsSendMessage;
     procedure TestReplyUsesCorrectPeerID;
+    procedure TestAnswerCallsSendMessageEventAnswer;
+    procedure TestAnswerPassesEventData;
   end;
 
   { TMessageEventHandlerTests — ProcessMessageEvent + AddMessageEventHandler }
@@ -999,7 +1001,7 @@ begin
     aKeyboard.AddButton('Button 1');
     aKeyboardJSON := aKeyboard.Build;
 
-    fBot.EditMessage(999, 12345, 'Choose option', aKeyboardJSON);
+    fBot.EditMessage(999, 12345, 'Choose option', 0, aKeyboardJSON);
 
     aLastURL := TMockHTTPClient.GetLastURL;
     CheckTrue(Pos('messages.edit', aLastURL) > 0, 'URL должен содержать метод messages.edit');
@@ -1403,6 +1405,29 @@ begin
   fEvent.Reply('Ок');
   CheckTrue(TMockHTTPClient.WasCalled('peer_id=2856025'),
     'Reply должен отправить на peer_id из события');
+end;
+
+procedure TMessageEventTests.TestAnswerCallsSendMessageEventAnswer;
+begin
+  TMockHTTPClient.ClearCalls;
+  fEvent.Answer;
+  CheckTrue(TMockHTTPClient.GetCallCount > 0, 'Answer должен вызвать API');
+  CheckTrue(TMockHTTPClient.WasCalled('messages.sendMessageEventAnswer'),
+    'Должен вызываться метод messages.sendMessageEventAnswer');
+end;
+
+procedure TMessageEventTests.TestAnswerPassesEventData;
+begin
+  TMockHTTPClient.ClearCalls;
+  fEvent.Answer(dtShowSnackbar, 'Готово');
+  CheckTrue(TMockHTTPClient.WasCalled('event_id=5d19bd487fbd'),
+    'Должен передаваться event_id из события');
+  CheckTrue(TMockHTTPClient.WasCalled('user_id=2856025'),
+    'Должен передаваться user_id из события');
+  CheckTrue(TMockHTTPClient.WasCalled('peer_id=2856025'),
+    'Должен передаваться peer_id из события');
+  CheckTrue(TMockHTTPClient.WasCalled(EncodeURLElement('show_snackbar')),
+    'Должен передаваться тип ответа');
 end;
 
 { TMessageEventHandlerTests }

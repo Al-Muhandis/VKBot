@@ -82,6 +82,9 @@ type
 
     { Send a text message back to the same peer }
     procedure Reply(const aText: string; const aKeyboard: string = ''; const aAttachment: string = '');
+    { Acknowledge/callback answer for inline button click (messages.sendMessageEventAnswer) }
+    function Answer(const aType: TVKEventDataType = dtShowSnackbar; const aText: string = '';
+      const aLink: string = ''): Boolean;
 
     property UserID:                 Int64       read GetUserID;
     property PeerID:                 Int64       read GetPeerID;
@@ -207,11 +210,13 @@ type
       const aAttachment: string = ''): Boolean;
     { You can specify MessageID or CMID (conversation_message_id) to indentify message to edit.
     For example You can pass MessageID as 0 and CMID as some nonzero value }
-    function EditMessage(aPeerID, aMessageID: Int64; const aText: string; aCMID: Int64;
+    function EditMessage(aPeerID, aMessageID: Int64; const aText: string; aCMID: Int64 = 0;
       const aKeyboard: string = ''): Boolean;
     function DeleteMessage(aPeerID, aMessageID: Int64; aDeleteForAll: Boolean = False): Boolean; overload;
     function DeleteMessage(aPeerID: Int64; const aMessageIDs: array of Int64;
       aDeleteForAll: Boolean = False): Boolean; overload;
+    function SendMessageEventAnswer(aUserID, aPeerID: Int64; const aEventID: string;
+      const aType: TVKEventDataType = dtShowSnackbar; const aText: string = ''; const aLink: string = ''): Boolean;
     function GetMessagesUploadServer(const aType: TDocFileType = dfUnspecified; aPeerID: Int64 = 0): TJSONData;
     function DocsSave(const aFile: string; const aTitle: string = ''; const aTags: string = ''): TJSONData;
     function UsersGet(const aUserIDs: string; const aFields: string = ''): TJSONData;
@@ -355,6 +360,11 @@ end;
 procedure TVKMessageEvent.Reply(const aText: string; const aKeyboard: string = ''; const aAttachment: string = '');
 begin
   fBot.SendMessage(PeerID, aText, aKeyboard, aAttachment);
+end;
+
+function TVKMessageEvent.Answer(const aType: TVKEventDataType; const aText: string; const aLink: string): Boolean;
+begin
+  Result := fBot.SendMessageEventAnswer(UserID, PeerID, EventID, aType, aText, aLink);
 end;
 
 { TVKMessageReply }
@@ -849,6 +859,41 @@ begin
     if aDeleteForAll then
       aParams.Add('delete_for_all', 1);
     Result := Assigned(APICall('messages.delete', aParams));
+  finally
+    aParams.Free;
+  end;
+end;
+
+function TVKBot.SendMessageEventAnswer(aUserID, aPeerID: Int64; const aEventID: string; const aType: TVKEventDataType;
+  const aText: string; const aLink: string): Boolean;
+var
+  aParams: TJSONObject;
+  aEventData: TJSONObject;
+begin
+  Result := False;
+  if (aUserID = 0) or (aPeerID = 0) or aEventID.IsEmpty then
+    Exit;
+
+  aParams := TJSONObject.Create;
+  try
+    aParams.Add('user_id', aUserID);
+    aParams.Add('peer_id', aPeerID);
+    aParams.Add('event_id', aEventID);
+
+    if (aType<>dtUnspecified) or (not aText.IsEmpty) or (not aLink.IsEmpty) then
+    begin
+      aEventData := TJSONObject.Create;
+      if aType<>dtUnspecified then
+        aEventData.Add('type', VKEventDataTypeToString(aType));
+      if not aText.IsEmpty then
+        aEventData.Add('text', aText);
+      if not aLink.IsEmpty then
+        aEventData.Add('link', aLink);
+      aParams.Add('event_data', aEventData.AsJSON);
+      aEventData.Free;
+    end;
+
+    Result := Assigned(APICall('messages.sendMessageEventAnswer', aParams));
   finally
     aParams.Free;
   end;
