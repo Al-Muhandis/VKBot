@@ -255,7 +255,7 @@ type
     constructor Create(aOneTime: Boolean = False; aInline: Boolean = False);
     destructor Destroy; override;
 
-    function AddButton(const aLabel: string; aColor: TVKButtonColor=bcSecondary; aType: TVKButtonType=btText;
+    function AddButton(const aLabel: string; aColor: TVKButtonColor=bcUnspecified; aType: TVKButtonType=btText;
       const aPayload: string=''; const aLink: String = ''): TVKKeyboard;
     function AddRow: TVKKeyboard;
     function Build: string;
@@ -993,7 +993,8 @@ begin
   if not aLink.IsEmpty then
     aAction.Add('link', aLink);
   aButton.Add('action', aAction);
-  aButton.Add('color', VKButtonColorToString(aColor));
+  if aColor<>bcUnspecified then
+    aButton.Add('color', VKButtonColorToString(aColor));
   aCurrentRow.Add(aButton);
   Result := Self;
 end;

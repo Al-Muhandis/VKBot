@@ -59,6 +59,7 @@ type
 
   { Button colors for VK keyboard }
   TVKButtonColor = (
+    bcUnspecified,//
     bcPrimary,    // Blue
     bcSecondary,  // White
     bcNegative,   // Red
@@ -273,6 +274,7 @@ end;
 function VKButtonColorToString(aColor: TVKButtonColor): string;
 const
   aColors: array[TVKButtonColor] of string = (
+    '',          //
     'primary',   // Blue
     'secondary', // White (default)
     'negative',  // Red
