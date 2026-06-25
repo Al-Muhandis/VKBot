@@ -82,7 +82,6 @@ type
     dtShowSnackbar,  // show_snackbar
     dtOpenLink,      // open_link    
     dtOpenApp,       // open_app
-    dtEditMessage,   // edit_message
     dtStartFlow      // start_flow
   );
 
@@ -295,7 +294,7 @@ end;
 function VKEventDataTypeToString(aType: TVKEventDataType): String;
 const
   aTypes: array[TVKEventDataType] of String = ('', 'close_keyboard', 'show_snackbar', 'open_link', 'open_app',
-    'edit_message', 'start_flow');
+    'start_flow');
 begin
   Result := aTypes[aType];
 end;
