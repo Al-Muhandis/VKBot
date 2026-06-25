@@ -83,7 +83,7 @@ type
     { Send a text message back to the same peer }
     procedure Reply(const aText: string; const aKeyboard: string = ''; const aAttachment: string = '');
     { Acknowledge/callback answer for inline button click (messages.sendMessageEventAnswer) }
-    function Answer(const aType: TVKEventDataType = dtShowSnackbar; const aText: string = '';
+    function Answer(const aType: TVKEventDataType = dtUnspecified; const aText: string = '';
       const aKeyboard: String = ''; const aLink: string = ''): Boolean;
 
     property UserID:                 Int64       read GetUserID;
@@ -251,12 +251,15 @@ type
     fButtons: TJSONArray;
     fOneTime: Boolean;
     fInline: Boolean;
+    { delete empty rows...? }
+    procedure DeleteEmptyRows;
   public
     constructor Create(aOneTime: Boolean = False; aInline: Boolean = False);
     destructor Destroy; override;
 
     function AddButton(const aLabel: string; aColor: TVKButtonColor=bcUnspecified; aType: TVKButtonType=btText;
       const aPayload: string=''; const aLink: String = ''): TVKKeyboard;
+    function AddOpenLinkButton(const aLabel: string; const aLink: String = ''): TVKKeyboard;
     function AddRow: TVKKeyboard;
     function Build: string;
 
@@ -960,6 +963,15 @@ end;
 
 { TVKKeyboard }
 
+procedure TVKKeyboard.DeleteEmptyRows;
+var
+  i: Integer;
+begin
+  for i:=fButtons.Count-1 downto 0 do
+    if fButtons.Arrays[i].Count=0 then
+      fButtons.Delete(i);
+end;
+
 constructor TVKKeyboard.Create(aOneTime: Boolean = False; aInline: Boolean = False);
 begin
   inherited Create;
@@ -993,10 +1005,15 @@ begin
   if not aLink.IsEmpty then
     aAction.Add('link', aLink);
   aButton.Add('action', aAction);
-  if aColor<>bcUnspecified then
+  if (aColor<>bcUnspecified) and (aType in [btText, btCallback, btLocation]) then
     aButton.Add('color', VKButtonColorToString(aColor));
   aCurrentRow.Add(aButton);
   Result := Self;
+end;
+
+function TVKKeyboard.AddOpenLinkButton(const aLabel: string; const aLink: String): TVKKeyboard;
+begin
+  Result := AddButton(aLabel, bcUnspecified, btOpenLink, EmptyStr, aLink);
 end;
 
 function TVKKeyboard.AddRow: TVKKeyboard;
@@ -1013,6 +1030,7 @@ begin
   try
     aKeyboard.Add('one_time', fOneTime);
     aKeyboard.Add('inline',   fInline);
+    DeleteEmptyRows;
     aKeyboard.Add('buttons',  fButtons.Clone);
     Result := aKeyboard.AsJSON;
   finally
