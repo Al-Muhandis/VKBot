@@ -182,7 +182,8 @@ function CreateWebhookConfirmationResponse(const aConfirmationCode: string): TVK
 function CreateWebhookErrorResponse(const aError: string;
   aHTTPStatus: Integer = VK_HTTP_INTERNAL_ERROR): TVKWebhookResponse;
 
-function VKUserLink(aUser: Int64): String; inline;
+function VKUserLink(aUser: Int64): String; inline; 
+function VKChatLink(aChat: Int64): String; inline;
 
 implementation
 
@@ -193,6 +194,11 @@ uses
 function VKUserLink(aUser: Int64): String;
 begin
   Result:=Format('https://vk.com/id%d', [aUser]);
+end;
+
+function VKChatLink(aChat: Int64): String;
+begin
+  Result:=Format('https://vk.me/id%d', [aChat]);
 end;
 
 { Helper: string → enum }
