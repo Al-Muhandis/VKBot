@@ -833,6 +833,18 @@ begin
   fRunning := False;
 end;
 
+{ Monotonic random_id: VK silently drops a message whose random_id it has
+  already seen, so ids must stay unique. Seeded from the wall clock in the
+  initialization section below to survive process restarts. }
+var
+  _RandomID: Int64 = 0;
+
+function NextRandomID: Int64;
+begin
+  Inc(_RandomID);
+  Result := _RandomID;
+end;
+
 function TVKBot.SendMessage(aPeerID: Int64; const aText: string; const aKeyboard: string = ''; const aAttachment: string = ''): Boolean;
 var
   aParams: TJSONObject;
@@ -842,7 +854,7 @@ begin
   try
     aParams.Add('peer_id',   aPeerID);
     aParams.Add('message',   aText);
-    aParams.Add('random_id', DateTimeToUnix(Now) * 1000 + Random(1000));
+    aParams.Add('random_id', NextRandomID);
     if not aKeyboard.IsEmpty then
       aParams.Add('keyboard', aKeyboard);
     if not aAttachment.IsEmpty then
@@ -1095,6 +1107,7 @@ begin
 end;
 
 initialization
-  Randomize;
+  { Wall-clock seed keeps random_id unique across process restarts }
+  _RandomID := DateTimeToUnix(Now) * 1000;
 
 end.

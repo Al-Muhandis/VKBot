@@ -217,6 +217,7 @@ type
     procedure TestAPICallReturnsCorrectData;
     procedure TestMultipleAPICallsLogged;
     procedure TestSendMessageContainsRandomId;
+    procedure TestRandomIdUniquePerCall;
   end;
 
   { TIntegrationTests }
@@ -1356,6 +1357,38 @@ begin
 
   aURL := TMockHTTPClient.GetLastURL;
   CheckTrue(Pos('random_id=', aURL) > 0, 'messages.send должен передавать random_id');
+end;
+
+procedure TAPICallTests.TestRandomIdUniquePerCall;
+
+  function ExtractParam(const aURL, aName: string): string;
+  var
+    aPos, aEnd: SizeInt;
+  begin
+    Result := '';
+    aPos := Pos(aName + '=', aURL);
+    if aPos = 0 then
+      Exit;
+    aPos += Length(aName) + 1;
+    aEnd := aPos;
+    while (aEnd <= Length(aURL)) and (aURL[aEnd] <> '&') do
+      Inc(aEnd);
+    Result := Copy(aURL, aPos, aEnd - aPos);
+  end;
+
+var
+  aID1, aID2: string;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckTrue(fBot.SendMessage(1, 'first'));
+  CheckTrue(fBot.SendMessage(1, 'second'));
+
+  aID1 := ExtractParam(TMockHTTPClient.GetCall(0), 'random_id');
+  aID2 := ExtractParam(TMockHTTPClient.GetCall(1), 'random_id');
+
+  CheckTrue(aID1 <> '', 'Первый вызов должен содержать random_id');
+  CheckTrue(aID2 <> '', 'Второй вызов должен содержать random_id');
+  CheckTrue(aID1 <> aID2, 'random_id не должен повторяться между отправками');
 end;
 
 { TIntegrationTests }
