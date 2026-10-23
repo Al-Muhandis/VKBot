@@ -27,6 +27,7 @@ type
     procedure TestGetPeerID;
     procedure TestGetFromID;
     procedure TestGetPayload;
+    procedure TestGetConversationMessageId_Large;
     procedure TestReplyCallsSend;
     procedure TestSendWithExplicitPeerID;
     procedure TestReplySendsToCorrectPeer;
@@ -400,6 +401,29 @@ end;
 procedure TMessageTests.TestGetPayload;
 begin
   CheckEquals('{"action":"start"}', fMessage.Payload);
+end;
+
+procedure TMessageTests.TestGetConversationMessageId_Large;
+var
+  aData: TJSONObject;
+  aMsg: TVKMessage;
+begin
+  { cmid может превышать 32-битный Integer — не должен обрезаться }
+  aData := TJSONObject.Create;
+  try
+    aData.Add('text', 'Big cmid');
+    aData.Add('peer_id', Int64(1));
+    aData.Add('conversation_message_id', Int64(3000000000));
+    aMsg := TVKMessage.Create(fBot, aData);
+    try
+      CheckEquals(Int64(3000000000), aMsg.ConversationMessageId,
+        'conversation_message_id > MaxInt не должен обрезаться');
+    finally
+      aMsg.Free;
+    end;
+  finally
+    aData.Free;
+  end;
 end;
 
 procedure TMessageTests.TestReplyCallsSend;

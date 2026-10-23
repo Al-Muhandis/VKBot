@@ -289,7 +289,7 @@ end;
 
 function TVKMessage.GetConversationMessageId: Int64;
 begin
-  Result := fData.Get('conversation_message_id', Integer(0));
+  Result := fData.Get('conversation_message_id', Int64(0));
 end;
 
 function TVKMessage.GetPeerID: Int64;
@@ -353,7 +353,7 @@ end;
 
 function TVKMessageEvent.GetConversationMessageId: Int64;
 begin
-  Result := fData.Get('conversation_message_id', Integer(0));
+  Result := fData.Get('conversation_message_id', Int64(0));
 end;
 
 function TVKMessageEvent.GetPayload: TJSONObject;
@@ -383,7 +383,7 @@ end;
 
 function TVKMessageReply.GetConversationMessageId: Int64;
 begin
-  Result := fData.Get('conversation_message_id', Integer(0));
+  Result := fData.Get('conversation_message_id', Int64(0));
 end;
 
 function TVKMessageReply.GetMessageID: Int64;
