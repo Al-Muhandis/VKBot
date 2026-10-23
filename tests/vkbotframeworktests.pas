@@ -357,6 +357,20 @@ type
     procedure TestButtonColorToString_Unspecified;
   end;
 
+  { TUploadInfraTests — мок multipart-загрузки (PostFile) }
+  TUploadInfraTests = class(TTestCase)
+  private
+    fClient: TMockHTTPClient;
+  protected
+    procedure SetUp; override;
+    procedure TearDown; override;
+  published
+    procedure TestPostFile_LoggedWithFieldAndFileName;
+    procedure TestPostFile_ReturnsMatchingResponse;
+    procedure TestPostFile_FallsBackToDefaultResponse;
+    procedure TestWasPostCalled;
+  end;
+
   { TLongPollResponseTests — обработка ответов LongPoll (ts/failed) }
   TLongPollTestBot = class(TMockVKBot)
   public
@@ -2465,6 +2479,48 @@ begin
   CheckEquals(Int64(11), fBot.TS, 'ts должен прийти из нового getLongPollServer');
 end;
 
+{ TUploadInfraTests }
+
+procedure TUploadInfraTests.SetUp;
+begin
+  fClient := TMockHTTPClient.Create(nil);
+  TMockHTTPClient.InitiateCallStorage;
+end;
+
+procedure TUploadInfraTests.TearDown;
+begin
+  fClient.Free;
+end;
+
+procedure TUploadInfraTests.TestPostFile_LoggedWithFieldAndFileName;
+begin
+  fClient.PostFile('https://up.mock/server', 'photo', 'pic.jpg');
+
+  CheckEquals(1, TMockHTTPClient.GetCallCount, 'PostFile должен попасть в лог вызовов');
+  CheckTrue(Pos('POST ', TMockHTTPClient.GetCall(0)) = 1, 'Запись лога должна начинаться с POST');
+  CheckTrue(Pos('up.mock/server', TMockHTTPClient.GetCall(0)) > 0, 'URL должен быть в логе');
+  CheckTrue(Pos('[photo: pic.jpg]', TMockHTTPClient.GetCall(0)) > 0, 'Поле и имя файла должны быть в логе');
+end;
+
+procedure TUploadInfraTests.TestPostFile_ReturnsMatchingResponse;
+begin
+  TMockHTTPClient.AddResponse('up.mock/server', '{"server":1}');
+  CheckEquals('{"server":1}', fClient.PostFile('https://up.mock/server', 'photo', 'a.jpg'));
+end;
+
+procedure TUploadInfraTests.TestPostFile_FallsBackToDefaultResponse;
+begin
+  TMockHTTPClient.SetDefaultResponse('{"default":1}');
+  CheckEquals('{"default":1}', fClient.PostFile('https://up.mock/other', 'file', 'a.ogg'));
+end;
+
+procedure TUploadInfraTests.TestWasPostCalled;
+begin
+  CheckFalse(TMockHTTPClient.WasPostCalled, 'До вызова PostFile записей POST нет');
+  fClient.PostFile('https://up.mock/server', 'photo', 'a.jpg');
+  CheckTrue(TMockHTTPClient.WasPostCalled, 'После PostFile запись POST должна быть');
+end;
+
 initialization
   RegisterTest(TEventTypeHelperTests);
   RegisterTest(TMessageReplyTests);
@@ -2483,6 +2539,7 @@ initialization
   RegisterTest(TUploadServerTests);
   RegisterTest(TVKLinksAndEnumsTests);
   RegisterTest(TLongPollResponseTests);
+  RegisterTest(TUploadInfraTests);
   RegisterTest(TIntegrationTests);
 
 end.

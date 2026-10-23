@@ -28,6 +28,9 @@ type
     class procedure FreeCallStorage;
   public
     function Get(const aURL: string): string; override;
+    { Uploads are logged as "POST <url> [<field>: <file>]" so tests can
+      match both the URL and the multipart field name via WasCalled }
+    function PostFile(const aURL, aFieldName, aFileName: string): string; override;
 
     class procedure InitiateCallStorage;
 
@@ -39,6 +42,7 @@ type
     class procedure ClearCalls;
     class function WasCalled(const aURLPattern: string): Boolean;
     class function GetLastURL: string;
+    class function WasPostCalled: Boolean;
   end;
 
   { Mock Bot: extended testing }
@@ -64,6 +68,28 @@ var
   aResponse: TURLResponse;
 begin
   fCallLog.Add(aURL);
+
+  if fResponses.Size=0 then
+    Exit(fDefaultResponse);
+  for i := 0 to fResponses.Size - 1 do
+  begin
+    aResponse := fResponses[i];
+    if Pos(aResponse.URL, aURL) > 0 then
+    begin
+      Result := aResponse.Response;
+      Exit;
+    end;
+  end;
+
+  Result := fDefaultResponse;
+end;
+
+function TMockHTTPClient.PostFile(const aURL, aFieldName, aFileName: string): string;
+var
+  i: Integer;
+  aResponse: TURLResponse;
+begin
+  fCallLog.Add(Format('POST %s [%s: %s]', [aURL, aFieldName, aFileName]));
 
   if fResponses.Size=0 then
     Exit(fDefaultResponse);
@@ -128,6 +154,16 @@ begin
     Result := fCallLog[fCallLog.Count - 1]
   else
     Result := EmptyStr;
+end;
+
+class function TMockHTTPClient.WasPostCalled: Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  for i := 0 to fCallLog.Count - 1 do
+    if Pos('POST ', fCallLog[i]) = 1 then
+      Exit(True);
 end;
 
 class procedure TMockHTTPClient.InitiateCallStorage;
