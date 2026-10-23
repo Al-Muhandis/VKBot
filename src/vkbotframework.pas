@@ -169,7 +169,6 @@ type
     fRunning: Boolean;
     fServer: string;
     fKey: string;
-    fTS: Int64;
     fOnLog: TOnLogEvent;
 
     procedure InitLongPoll;
@@ -188,9 +187,13 @@ type
     procedure DispatchDeeplink(const aMsg: TVKMessage);
 
   protected
+    fTS: Int64;
     procedure ProcessMessage(const aMessage: TJSONObject);
     procedure ProcessMessageEvent(const aEventObject: TJSONObject);
     procedure ProcessMessageReply(const aReplyObject: TJSONObject);
+    { Apply one LongPoll reply: dispatch updates, advance ts,
+      re-init the session on failed=2/3 }
+    procedure ProcessLongPollResponse(aRoot: TJSONObject);
     property RawJSON: TJSONData read fJSON write fJSON;
     property EventMap: TEventMap read fEventHandlers;
     property CommandMap: TCommandMap read fCommands;
@@ -752,8 +755,6 @@ procedure TVKBot.Start;
 var
   aURL, aResponse: string;
   aJSON: TJSONData;
-  aUpdates: TJSONArray;
-  i: Integer;
   aHTTPClient: TBaseHTTPClient;
 begin
   if fRunning then Exit;
@@ -775,18 +776,12 @@ begin
 
         aResponse := aHTTPClient.Get(aURL);
         aJSON     := GetJSON(aResponse);
-
-        if aJSON is TJSONObject then
-        begin
-          fTS      := TJSONObject(aJSON).Int64s['ts'];
-          aUpdates := TJSONObject(aJSON).Get('updates', TJSONArray(nil));
-          if Assigned(aUpdates) then
-            for i := 0 to aUpdates.Count - 1 do
-              if aUpdates[i] is TJSONObject then
-                ProcessUpdate(TJSONObject(aUpdates[i]));
+        try
+          if aJSON is TJSONObject then
+            ProcessLongPollResponse(TJSONObject(aJSON));
+        finally
+          aJSON.Free;
         end;
-
-        aJSON.Free;
       except
         on E: Exception do
         begin
@@ -798,6 +793,38 @@ begin
     end;
   finally
     aHTTPClient.Free;
+  end;
+end;
+
+procedure TVKBot.ProcessLongPollResponse(aRoot: TJSONObject);
+var
+  aFailed: Int64;
+  aUpdates: TJSONArray;
+  i: Integer;
+begin
+  aFailed := aRoot.Get('failed', Int64(0));
+  case aFailed of
+    0:
+      begin
+        fTS := aRoot.Get('ts', fTS);
+        aUpdates := aRoot.Get('updates', TJSONArray(nil));
+        if Assigned(aUpdates) then
+          for i := 0 to aUpdates.Count - 1 do
+            if aUpdates[i] is TJSONObject then
+              ProcessUpdate(TJSONObject(aUpdates[i]));
+      end;
+    1:
+      begin
+        { history partly lost — continue from the ts VK suggests }
+        DoLog(llWarning, 'LongPoll: history expired (failed=1)');
+        fTS := aRoot.Get('ts', fTS);
+      end;
+  else
+    begin
+      { failed=2/3: key or server is no longer valid }
+      DoLog(llWarning, Format('LongPoll: failed=%d, re-initializing session', [aFailed]));
+      InitLongPoll;
+    end;
   end;
 end;
 

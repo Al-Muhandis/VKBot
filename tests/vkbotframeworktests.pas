@@ -356,6 +356,28 @@ type
     procedure TestButtonColorToString_Unspecified;
   end;
 
+  { TLongPollResponseTests — обработка ответов LongPoll (ts/failed) }
+  TLongPollTestBot = class(TMockVKBot)
+  public
+    procedure ApplyLongPoll(aRoot: TJSONObject);
+    property TS: Int64 read fTS;
+  end;
+
+  TLongPollResponseTests = class(TTestCase)
+  private
+    fBot: TLongPollTestBot;
+    fMessagesReceived: Integer;
+    procedure HandleMessage(const {%H-}aMsg: TVKMessage);
+  protected
+    procedure SetUp; override;
+    procedure TearDown; override;
+  published
+    procedure TestNormalResponse_TSAdvanced_UpdatesProcessed;
+    procedure TestFailed1_AdvancesTS_NoReinit;
+    procedure TestFailed2_Reinitializes;
+    procedure TestFailed3_Reinitializes;
+  end;
+
 implementation
 
 uses
@@ -2312,6 +2334,104 @@ begin
   CheckEquals('primary', VKButtonColorToString(bcPrimary));
 end;
 
+{ TLongPollResponseTests }
+
+procedure TLongPollTestBot.ApplyLongPoll(aRoot: TJSONObject);
+begin
+  ProcessLongPollResponse(aRoot);
+end;
+
+procedure TLongPollResponseTests.SetUp;
+begin
+  fBot := TLongPollTestBot.Create('test_token', 123456);
+  TMockHTTPClient.SetDefaultResponse('{"response":1}');
+  fMessagesReceived := 0;
+end;
+
+procedure TLongPollResponseTests.TearDown;
+begin
+  fBot.Free;
+end;
+
+procedure TLongPollResponseTests.HandleMessage(const aMsg: TVKMessage);
+begin
+  Inc(fMessagesReceived);
+end;
+
+procedure TLongPollResponseTests.TestNormalResponse_TSAdvanced_UpdatesProcessed;
+var
+  aRoot: TJSONObject;
+begin
+  fBot.OnMessage := @HandleMessage;
+
+  aRoot := GetJSON(
+    '{"ts":101,"updates":[{"type":"message_new","object":{"message":{"text":"hi","peer_id":1}}}]}')
+    as TJSONObject;
+  try
+    fBot.ApplyLongPoll(aRoot);
+  finally
+    aRoot.Free;
+  end;
+
+  CheckEquals(Int64(101), fBot.TS, 'ts должен продвинуться');
+  CheckEquals(1, fMessagesReceived, 'Апдейт должен быть обработан');
+end;
+
+procedure TLongPollResponseTests.TestFailed1_AdvancesTS_NoReinit;
+var
+  aRoot: TJSONObject;
+begin
+  aRoot := GetJSON('{"ts":555,"failed":1}') as TJSONObject;
+  try
+    fBot.ApplyLongPoll(aRoot);
+  finally
+    aRoot.Free;
+  end;
+
+  CheckEquals(Int64(555), fBot.TS, 'failed=1 должен обновить ts');
+  CheckEquals(0, fMessagesReceived, 'failed=1 не содержит апдейтов');
+  CheckFalse(TMockHTTPClient.WasCalled('groups.getLongPollServer'),
+    'failed=1 не должен давать ре-инициализацию');
+end;
+
+procedure TLongPollResponseTests.TestFailed2_Reinitializes;
+var
+  aRoot: TJSONObject;
+begin
+  TMockHTTPClient.AddResponse('groups.getLongPollServer',
+    '{"response":{"server":"https://lp.server","key":"k1","ts":9}}');
+
+  aRoot := GetJSON('{"failed":2}') as TJSONObject;
+  try
+    fBot.ApplyLongPoll(aRoot);
+  finally
+    aRoot.Free;
+  end;
+
+  CheckTrue(TMockHTTPClient.WasCalled('groups.getLongPollServer'),
+    'failed=2 требует ре-инициализации сессии');
+  CheckEquals(Int64(9), fBot.TS, 'ts должен прийти из нового getLongPollServer');
+end;
+
+procedure TLongPollResponseTests.TestFailed3_Reinitializes;
+var
+  aRoot: TJSONObject;
+begin
+  TMockHTTPClient.AddResponse('groups.getLongPollServer',
+    '{"response":{"server":"https://lp.server","key":"k2","ts":11}}');
+
+  aRoot := GetJSON('{"failed":3}') as TJSONObject;
+  try
+    fBot.ApplyLongPoll(aRoot);
+  finally
+    aRoot.Free;
+  end;
+
+  CheckTrue(TMockHTTPClient.WasCalled('groups.getLongPollServer'),
+    'failed=3 требует ре-инициализации сессии');
+  CheckEquals(Int64(11), fBot.TS, 'ts должен прийти из нового getLongPollServer');
+end;
+
 initialization
   RegisterTest(TEventTypeHelperTests);
   RegisterTest(TMessageReplyTests);
@@ -2329,6 +2449,7 @@ initialization
   RegisterTest(TSendMessageEventAnswerTests);
   RegisterTest(TUploadServerTests);
   RegisterTest(TVKLinksAndEnumsTests);
+  RegisterTest(TLongPollResponseTests);
   RegisterTest(TIntegrationTests);
 
 end.
