@@ -114,8 +114,8 @@ begin
       if UploadURL.IsEmpty then
         raise Exception.Create('upload_url is empty');
     finally
-      { JSON structure stored in Bot internally }
-      //UploadServerResponse.Free;
+      { Result is caller-owned since the framework returns a copy }
+      UploadServerResponse.Free;
     end;
 
     { 2) Загружаем файл в upload_url (multipart/form-data) }
@@ -130,7 +130,7 @@ begin
       if Attachment.IsEmpty then
         raise Exception.Create('Could not build doc attachment');
     finally
-      //DocsSaveResponse.Free;
+      DocsSaveResponse.Free;
     end;
 
     { 4) Отправляем сообщение в личный чат пользователя с attachment }

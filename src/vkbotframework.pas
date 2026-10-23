@@ -218,6 +218,9 @@ type
     function SendMessageEventAnswer(aUserID, aPeerID: Int64; const aEventID: string;
       const aType: TVKEventDataType = dtShowSnackbar; const aText: string = ''; const aKeyboard: String = '';
       const aLink: string = ''): Boolean;
+    { These three return a CALLER-OWNED copy of the "response" field —
+      free the result when done. nil when the API call failed.
+      RawResponse keeps the bot-owned JSON of the very last APICall. }
     function GetMessagesUploadServer(const aType: TDocFileType = dfUnspecified; aPeerID: Int64 = 0): TJSONData;
     function DocsSave(const aFile: string; const aTitle: string = ''; const aTags: string = ''): TJSONData;
     function UsersGet(const aUserIDs: string; const aFields: string = ''): TJSONData;
@@ -919,6 +922,7 @@ end;
 function TVKBot.GetMessagesUploadServer(const aType: TDocFileType; aPeerID: Int64): TJSONData;
 var
   aParams: TJSONObject;
+  aResponse: TJSONData;
 begin
   aParams := TJSONObject.Create;
   try
@@ -929,15 +933,20 @@ begin
     if aPeerID > 0 then
       aParams.Add('peer_id', aPeerID);
 
-    Result := APICall('docs.getMessagesUploadServer', aParams);
+    aResponse := APICall('docs.getMessagesUploadServer', aParams);
+    if Assigned(aResponse) then
+      Result := aResponse.Clone
+    else
+      Result := nil;
   finally
     aParams.Free;
   end;
 end;
 
-function TVKBot.DocsSave(const aFile: string; const aTitle: string = ''; const aTags: string = ''): TJSONData;
+function TVKBot.DocsSave(const aFile: string; const aTitle: string; const aTags: string): TJSONData;
 var
   aParams: TJSONObject;
+  aResponse: TJSONData;
 begin
   aParams := TJSONObject.Create;
   try
@@ -947,15 +956,20 @@ begin
     if not aTags.IsEmpty then
       aParams.Add('tags', aTags);
 
-    Result := APICall('docs.save', aParams);
+    aResponse := APICall('docs.save', aParams);
+    if Assigned(aResponse) then
+      Result := aResponse.Clone
+    else
+      Result := nil;
   finally
     aParams.Free;
   end;
 end;
 
-function TVKBot.UsersGet(const aUserIDs: string; const aFields: string = ''): TJSONData;
+function TVKBot.UsersGet(const aUserIDs: string; const aFields: string): TJSONData;
 var
   aParams: TJSONObject;
+  aResponse: TJSONData;
 begin
   aParams := TJSONObject.Create;
   try
@@ -964,7 +978,11 @@ begin
     if not aFields.IsEmpty then
       aParams.Add('fields', aFields);
 
-    Result := APICall('users.get', aParams);
+    aResponse := APICall('users.get', aParams);
+    if Assigned(aResponse) then
+      Result := aResponse.Clone
+    else
+      Result := nil;
   finally
     aParams.Free;
   end;

@@ -1242,7 +1242,7 @@ begin
     CheckNotNull(aResponse, 'DocsSave должен вернуть данные ответа');
     CheckTrue(TMockHTTPClient.WasCalled('docs.save'), 'Метод docs.save должен быть вызван');
   finally
-    //aResponse.Free; frees in fBot
+    aResponse.Free;
   end;
 end;
 
@@ -1253,15 +1253,12 @@ begin
   TMockHTTPClient.SetDefaultResponse('{"response":{"type":"doc","doc":{"id":2}}}');
 
   fBot.DocsSave('uploaded_file_token', 'My title', 'tag1,tag2');
-  try
-    aLastURL := TMockHTTPClient.GetLastURL;
-    CheckTrue(Pos('docs.save', aLastURL) > 0, 'URL должен содержать метод docs.save');
-    CheckTrue(Pos('file=uploaded%5Ffile%5Ftoken', aLastURL) > 0, 'URL должен содержать параметр file');
-    CheckTrue(Pos('title=My', aLastURL) > 0, 'URL должен содержать параметр title');
-    CheckTrue(Pos('tags=tag1,tag2', aLastURL) > 0, 'URL должен содержать параметр tags');
-  finally
-    //aResponse.Free; frees in fBot
-  end;
+
+  aLastURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos('docs.save', aLastURL) > 0, 'URL должен содержать метод docs.save');
+  CheckTrue(Pos('file=uploaded%5Ffile%5Ftoken', aLastURL) > 0, 'URL должен содержать параметр file');
+  CheckTrue(Pos('title=My', aLastURL) > 0, 'URL должен содержать параметр title');
+  CheckTrue(Pos('tags=tag1,tag2', aLastURL) > 0, 'URL должен содержать параметр tags');
 end;
 
 procedure TAPICallTests.TestUsersGetSuccess;
@@ -1275,7 +1272,7 @@ begin
     CheckNotNull(aResponse, 'UsersGet должен вернуть данные ответа');
     CheckTrue(TMockHTTPClient.WasCalled('users.get'), 'Метод users.get должен быть вызван');
   finally
-    //aResponse.Free; frees in fBot
+    aResponse.Free;
   end;
 end;
 
