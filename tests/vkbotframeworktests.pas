@@ -411,6 +411,25 @@ type
     procedure TestGetConversationMembers_CustomParams;
   end;
 
+  { TGroupsAndUtilsTests — группы и утилиты }
+  TGroupsAndUtilsTests = class(TTestCase)
+  private
+    fBot: TTestVKBot;
+  protected
+    procedure SetUp; override;
+    procedure TearDown; override;
+  published
+    procedure TestGetGroupInfo_UsesBotGroupByDefault;
+    procedure TestGetGroupInfo_ExplicitGroupID;
+    procedure TestIsMember_True;
+    procedure TestIsMember_False;
+    procedure TestIsMember_NoGroup_NoCall;
+    procedure TestGetGroupMembers_Params;
+    procedure TestResolveScreenName;
+    procedure TestResolveScreenName_Empty_NoCall;
+    procedure TestGetServerTime;
+  end;
+
   { TLongPollResponseTests — обработка ответов LongPoll (ts/failed) }
   TLongPollTestBot = class(TMockVKBot)
   public
@@ -2823,6 +2842,128 @@ begin
   CheckTrue(Pos('offset=100', aURL) > 0);
 end;
 
+{ TGroupsAndUtilsTests }
+
+procedure TGroupsAndUtilsTests.SetUp;
+begin
+  fBot := TTestVKBot.Create('test_token', 123456);
+  TMockHTTPClient.SetDefaultResponse('{"response":{"count":0,"items":[]}}');
+end;
+
+procedure TGroupsAndUtilsTests.TearDown;
+begin
+  fBot.Free;
+end;
+
+procedure TGroupsAndUtilsTests.TestGetGroupInfo_UsesBotGroupByDefault;
+var
+  aURL: string;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckNotNull(fBot.GetGroupInfo);
+
+  aURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos('groups.getById', aURL) > 0, 'Должен вызываться groups.getById');
+  CheckTrue(Pos('group_id=123456', aURL) > 0, 'Без явного id — группа бота');
+end;
+
+procedure TGroupsAndUtilsTests.TestGetGroupInfo_ExplicitGroupID;
+var
+  aURL: string;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckNotNull(fBot.GetGroupInfo(777));
+
+  aURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos('group_id=777', aURL) > 0, 'Явный id должен переопределять');
+end;
+
+procedure TGroupsAndUtilsTests.TestIsMember_True;
+begin
+  TMockHTTPClient.ClearCalls;
+  TMockHTTPClient.AddResponse('groups.isMember', '{"response":1}');
+
+  CheckTrue(fBot.IsMember(42), 'Ответ 1 должен давать True');
+  CheckTrue(TMockHTTPClient.WasCalled('groups.isMember'), 'Должен вызываться groups.isMember');
+  CheckTrue(TMockHTTPClient.WasCalled('user_id=42'));
+  CheckTrue(TMockHTTPClient.WasCalled('group_id=123456'), 'Группа по умолчанию — группа бота');
+end;
+
+procedure TGroupsAndUtilsTests.TestIsMember_False;
+begin
+  TMockHTTPClient.ClearCalls;
+  TMockHTTPClient.AddResponse('groups.isMember', '{"response":0}');
+
+  CheckFalse(fBot.IsMember(42, 555), 'Ответ 0 должен давать False');
+  CheckTrue(TMockHTTPClient.WasCalled('group_id=555'), 'Явная группа должна передаваться');
+end;
+
+procedure TGroupsAndUtilsTests.TestIsMember_NoGroup_NoCall;
+var
+  aBotNoGroup: TTestVKBot;
+begin
+  aBotNoGroup := TTestVKBot.Create('test_token', 0);
+  try
+    TMockHTTPClient.ClearCalls;
+    CheckFalse(aBotNoGroup.IsMember(42), 'Без группы проверка невозможна');
+    CheckEquals(0, TMockHTTPClient.GetCallCount, 'Вызова быть не должно');
+  finally
+    aBotNoGroup.Free;
+  end;
+end;
+
+procedure TGroupsAndUtilsTests.TestGetGroupMembers_Params;
+var
+  aURL: string;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckNotNull(fBot.GetGroupMembers(0, 300, 600));
+
+  aURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos('groups.getMembers', aURL) > 0, 'Должен вызываться groups.getMembers');
+  CheckTrue(Pos('group_id=123456', aURL) > 0, 'Группа бота по умолчанию');
+  CheckTrue(Pos('count=300', aURL) > 0);
+  CheckTrue(Pos('offset=600', aURL) > 0);
+end;
+
+procedure TGroupsAndUtilsTests.TestResolveScreenName;
+var
+  aResult: TJSONData;
+  aURL: string;
+begin
+  TMockHTTPClient.ClearCalls;
+  TMockHTTPClient.AddResponse('resolveScreenName', '{"response":{"type":"user","object_id":1}}');
+
+  aResult := fBot.ResolveScreenName('durov');
+  try
+    CheckNotNull(aResult, 'Результат должен возвращаться');
+    CheckEquals('user', TJSONObject(aResult).Get('type', ''), 'Тип объекта должен быть доступен');
+    CheckEquals(Int64(1), TJSONObject(aResult).Get('object_id', Int64(0)));
+
+    aURL := TMockHTTPClient.GetLastURL;
+    CheckTrue(Pos('utils.resolveScreenName', aURL) > 0);
+    CheckTrue(Pos('screen_name=durov', aURL) > 0);
+  finally
+    aResult.Free;
+  end;
+end;
+
+procedure TGroupsAndUtilsTests.TestResolveScreenName_Empty_NoCall;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckNull(fBot.ResolveScreenName(EmptyStr), 'Пустое имя не должно уходить в API');
+  CheckEquals(0, TMockHTTPClient.GetCallCount);
+end;
+
+procedure TGroupsAndUtilsTests.TestGetServerTime;
+begin
+  TMockHTTPClient.ClearCalls;
+  TMockHTTPClient.AddResponse('getServerTime', '{"response":1761288000}');
+
+  CheckEquals(Int64(1761288000), fBot.GetServerTime, 'Должно вернуться серверное время');
+  CheckTrue(TMockHTTPClient.WasCalled('utils.getServerTime'));
+end;
+
 initialization
   RegisterTest(TEventTypeHelperTests);
   RegisterTest(TMessageReplyTests);
@@ -2844,6 +2985,7 @@ initialization
   RegisterTest(TUploadInfraTests);
   RegisterTest(TMessagesMethodsTests);
   RegisterTest(TChatMethodsTests);
+  RegisterTest(TGroupsAndUtilsTests);
   RegisterTest(TIntegrationTests);
 
 end.

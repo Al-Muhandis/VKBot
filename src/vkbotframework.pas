@@ -235,6 +235,17 @@ type
     function GetConversationById(aPeerID: Int64): TJSONData;
     function GetConversationMembers(aPeerID: Int64; const aFields: string = '';
       aCount: Integer = 200; aOffset: Int64 = 0): TJSONData;
+    { Group info and membership (subscription checks for Telegram mirrors).
+      aGroupID = 0 means the bot's own group (fGroupID / token owner). }
+    function GetGroupInfo(aGroupID: Int64 = 0; const aFields: string = ''): TJSONData;
+    function IsMember(aUserID: Int64; aGroupID: Int64 = 0): Boolean;
+    function GetGroupMembers(aGroupID: Int64 = 0; aCount: Integer = 1000;
+      aOffset: Int64 = 0): TJSONData;
+    { Resolve a short name (vk.com/<screen_name>) to a user/group id,
+      caller-owned result; nil when the name is unknown }
+    function ResolveScreenName(const aScreenName: string): TJSONData;
+    { VK server unix time (no token required by VK) }
+    function GetServerTime: Int64;
     { You can specify MessageID or CMID (conversation_message_id) to indentify message to edit.
     For example You can pass MessageID as 0 and CMID as some nonzero value }
     function EditMessage(aPeerID, aMessageID: Int64; const aText: string; aCMID: Int64 = 0;
@@ -1072,6 +1083,108 @@ begin
   finally
     aParams.Free;
   end;
+end;
+
+function TVKBot.GetGroupInfo(aGroupID: Int64; const aFields: string): TJSONData;
+var
+  aParams: TJSONObject;
+  aResponse: TJSONData;
+begin
+  aParams := TJSONObject.Create;
+  try
+    if aGroupID = 0 then
+      aGroupID := fGroupID;
+    if aGroupID > 0 then
+      aParams.Add('group_id', aGroupID);
+    if not aFields.IsEmpty then
+      aParams.Add('fields', aFields);
+
+    aResponse := APICall('groups.getById', aParams);
+    if Assigned(aResponse) then
+      Result := aResponse.Clone
+    else
+      Result := nil;
+  finally
+    aParams.Free;
+  end;
+end;
+
+function TVKBot.IsMember(aUserID: Int64; aGroupID: Int64): Boolean;
+var
+  aParams: TJSONObject;
+  aResponse: TJSONData;
+begin
+  Result := False;
+  if aGroupID = 0 then
+    aGroupID := fGroupID;
+  if (aUserID = 0) or (aGroupID = 0) then
+    Exit;
+
+  aParams := TJSONObject.Create;
+  try
+    aParams.Add('group_id', aGroupID);
+    aParams.Add('user_id',  aUserID);
+    aResponse := APICall('groups.isMember', aParams);
+    if Assigned(aResponse) then
+      Result := aResponse.AsInteger <> 0;
+  finally
+    aParams.Free;
+  end;
+end;
+
+function TVKBot.GetGroupMembers(aGroupID: Int64; aCount: Integer; aOffset: Int64): TJSONData;
+var
+  aParams: TJSONObject;
+  aResponse: TJSONData;
+begin
+  aParams := TJSONObject.Create;
+  try
+    if aGroupID = 0 then
+      aGroupID := fGroupID;
+    if aGroupID > 0 then
+      aParams.Add('group_id', aGroupID);
+    aParams.Add('count', aCount);
+    if aOffset > 0 then
+      aParams.Add('offset', aOffset);
+
+    aResponse := APICall('groups.getMembers', aParams);
+    if Assigned(aResponse) then
+      Result := aResponse.Clone
+    else
+      Result := nil;
+  finally
+    aParams.Free;
+  end;
+end;
+
+function TVKBot.ResolveScreenName(const aScreenName: string): TJSONData;
+var
+  aParams: TJSONObject;
+  aResponse: TJSONData;
+begin
+  Result := nil;
+  if aScreenName.IsEmpty then
+    Exit;
+
+  aParams := TJSONObject.Create;
+  try
+    aParams.Add('screen_name', aScreenName);
+    aResponse := APICall('utils.resolveScreenName', aParams);
+    if Assigned(aResponse) then
+      Result := aResponse.Clone;
+  finally
+    aParams.Free;
+  end;
+end;
+
+function TVKBot.GetServerTime: Int64;
+var
+  aResponse: TJSONData;
+begin
+  Result := 0;
+  aResponse := APICall('utils.getServerTime', nil);
+  if Assigned(aResponse) then
+    Result := aResponse.AsInteger;
 end;
 function TVKBot.EditMessage(aPeerID, aMessageID: Int64; const aText: string; aCMID: Int64; const aKeyboard: string
   ): Boolean;
