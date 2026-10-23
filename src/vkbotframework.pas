@@ -228,6 +228,23 @@ type
     function DocsSave(const aFile: string; const aTitle: string = ''; const aTags: string = ''): TJSONData;
     function UsersGet(const aUserIDs: string; const aFields: string = ''): TJSONData;
 
+    { --- Media upload pipelines (mirror of Telegram bot media sending) ---
+      Each Upload* helper runs the full VK upload chain and returns the
+      attachment string ("photo<owner>_<id>", "audio_message<owner>_<id>",
+      "doc<owner>_<id>") usable as SendMessage aAttachment — or '' when
+      any step failed. The Send* one-shots upload a file from disk and
+      send it in a single call. }
+    function GetPhotosUploadServer(aPeerID: Int64 = 0): TJSONData;
+    { Raw multipart upload to a previously obtained upload_url.
+      Returns the server response body ('' on network failure). }
+    function UploadFile(const aUploadURL, aFieldName, aFileName: string): string;
+    function UploadPhoto(aPeerID: Int64; const aFileName: string): string;
+    function UploadDoc(aPeerID: Int64; const aFileName: string; const aTitle: string = '';
+      const aTags: string = ''; aVoice: Boolean = False): string;
+    function SendPhoto(aPeerID: Int64; const aFileName: string; const aCaption: string = ''): Boolean;
+    function SendVoiceMessage(aPeerID: Int64; const aFileName: string): Boolean;
+    function SendDocument(aPeerID: Int64; const aFileName: string; const aTitle: string = ''): Boolean;
+
     property OnDeeplink: TDeeplinkHandler read fOnDeeplink write fOnDeeplink;
 
     property Token:   string  read fToken write fToken;
@@ -1025,6 +1042,213 @@ begin
   finally
     aParams.Free;
   end;
+end;
+
+{ --- Media upload pipelines --- }
+
+function TVKBot.GetPhotosUploadServer(aPeerID: Int64): TJSONData;
+var
+  aParams: TJSONObject;
+  aResponse: TJSONData;
+begin
+  aParams := TJSONObject.Create;
+  try
+    if aPeerID > 0 then
+      aParams.Add('peer_id', aPeerID);
+
+    aResponse := APICall('photos.getMessagesUploadServer', aParams);
+    if Assigned(aResponse) then
+      Result := aResponse.Clone
+    else
+      Result := nil;
+  finally
+    aParams.Free;
+  end;
+end;
+
+function TVKBot.UploadFile(const aUploadURL, aFieldName, aFileName: string): string;
+var
+  aClient: TBaseHTTPClient;
+begin
+  Result := EmptyStr;
+  if aUploadURL.IsEmpty or aFieldName.IsEmpty or aFileName.IsEmpty then
+    Exit;
+
+  aClient := TBaseHTTPClient.GetClientClass.Create(nil);
+  try
+    try
+      Result := aClient.PostFile(aUploadURL, aFieldName, aFileName);
+      DoLog(llDebug, Format('File uploaded: %s -> %s', [aFileName, aUploadURL]));
+    except
+      on E: Exception do
+      begin
+        DoLog(llError, Format('File upload failed: %s, error: %s', [aFileName, E.Message]));
+        Result := EmptyStr;
+      end;
+    end;
+  finally
+    aClient.Free;
+  end;
+end;
+
+function TVKBot.UploadPhoto(aPeerID: Int64; const aFileName: string): string;
+var
+  aUploadServer: TJSONData;
+  aUploadURL: string;
+  aUploadResp: TJSONData;
+  aSaveParams: TJSONObject;
+  aSaved: TJSONData;
+  aItem: TJSONObject;
+begin
+  Result := EmptyStr;
+
+  { Step 1: ask VK where to upload the photo }
+  aUploadServer := GetPhotosUploadServer(aPeerID);
+  if not Assigned(aUploadServer) then
+    Exit;
+  try
+    if not (aUploadServer is TJSONObject) then
+      Exit;
+    aUploadURL := TJSONObject(aUploadServer).Get('upload_url', EmptyStr);
+  finally
+    aUploadServer.Free;
+  end;
+  if aUploadURL.IsEmpty then
+    Exit;
+
+  { Step 2: multipart upload to the upload server }
+  try
+    aUploadResp := GetJSON(UploadFile(aUploadURL, 'photo', aFileName));
+  except
+    on E: Exception do
+    begin
+      DoLog(llError, Format('Photo upload failed for %s: %s', [aFileName, E.Message]));
+      Exit;
+    end;
+  end;
+  try
+    if not (aUploadResp is TJSONObject) then
+      Exit;
+
+    { Step 3: save the uploaded photo, extract owner_id/id }
+    aSaveParams := TJSONObject.Create;
+    try
+      aSaveParams.Add('server', TJSONObject(aUploadResp).Get('server', 0));
+      aSaveParams.Add('photo',  TJSONObject(aUploadResp).Get('photo', EmptyStr));
+      aSaveParams.Add('hash',   TJSONObject(aUploadResp).Get('hash', EmptyStr));
+      aSaved := APICall('photos.saveMessagesPhoto', aSaveParams);
+    finally
+      aSaveParams.Free;
+    end;
+
+    if not Assigned(aSaved) then
+      Exit;
+    if not (aSaved is TJSONArray) or (TJSONArray(aSaved).Count = 0) then
+      Exit;
+    if not (TJSONArray(aSaved).Items[0] is TJSONObject) then
+      Exit;
+
+    aItem  := TJSONObject(TJSONArray(aSaved).Items[0]);
+    Result := Format('photo%d_%d', [aItem.Get('owner_id', Int64(0)), aItem.Get('id', Int64(0))]);
+  finally
+    aUploadResp.Free;
+  end;
+end;
+
+function TVKBot.UploadDoc(aPeerID: Int64; const aFileName: string; const aTitle: string;
+  const aTags: string; aVoice: Boolean): string;
+var
+  aUploadServer: TJSONData;
+  aUploadURL: string;
+  aUploadResp: TJSONData;
+  aFileKey: string;
+  aSaved: TJSONData;
+  aItem: TJSONObject;
+begin
+  Result := EmptyStr;
+
+  if aVoice then
+    aUploadServer := GetMessagesUploadServer(dfAudioMessage, aPeerID)
+  else
+    aUploadServer := GetMessagesUploadServer(dfDoc, aPeerID);
+  if not Assigned(aUploadServer) then
+    Exit;
+  try
+    if not (aUploadServer is TJSONObject) then
+      Exit;
+    aUploadURL := TJSONObject(aUploadServer).Get('upload_url', EmptyStr);
+  finally
+    aUploadServer.Free;
+  end;
+  if aUploadURL.IsEmpty then
+    Exit;
+
+  try
+    aUploadResp := GetJSON(UploadFile(aUploadURL, 'file', aFileName));
+  except
+    on E: Exception do
+    begin
+      DoLog(llError, Format('Doc upload failed for %s: %s', [aFileName, E.Message]));
+      Exit;
+    end;
+  end;
+  try
+    if not (aUploadResp is TJSONObject) then
+      Exit;
+    aFileKey := TJSONObject(aUploadResp).Get('file', EmptyStr);
+  finally
+    aUploadResp.Free;
+  end;
+  if aFileKey.IsEmpty then
+    Exit;
+
+  aSaved := DocsSave(aFileKey, aTitle, aTags);
+  if not Assigned(aSaved) then
+    Exit;
+  try
+    if not (aSaved is TJSONArray) or (TJSONArray(aSaved).Count = 0) then
+      Exit;
+    if not (TJSONArray(aSaved).Items[0] is TJSONObject) then
+      Exit;
+
+    aItem := TJSONObject(TJSONArray(aSaved).Items[0]);
+    if aVoice then
+      Result := Format('audio_message%d_%d', [aItem.Get('owner_id', Int64(0)), aItem.Get('id', Int64(0))])
+    else
+      Result := Format('doc%d_%d', [aItem.Get('owner_id', Int64(0)), aItem.Get('id', Int64(0))]);
+  finally
+    aSaved.Free;
+  end;
+end;
+
+function TVKBot.SendPhoto(aPeerID: Int64; const aFileName: string; const aCaption: string): Boolean;
+var
+  aAttachment: string;
+begin
+  aAttachment := UploadPhoto(aPeerID, aFileName);
+  if aAttachment.IsEmpty then
+    Exit(False);
+  Result := SendMessage(aPeerID, aCaption, EmptyStr, aAttachment);
+end;
+
+function TVKBot.SendVoiceMessage(aPeerID: Int64; const aFileName: string): Boolean;
+var
+  aAttachment: string;
+begin
+  aAttachment := UploadDoc(aPeerID, aFileName, EmptyStr, EmptyStr, True);
+  if aAttachment.IsEmpty then
+    Exit(False);
+  Result := SendMessage(aPeerID, EmptyStr, EmptyStr, aAttachment);
+end;
+
+function TVKBot.SendDocument(aPeerID: Int64; const aFileName: string; const aTitle: string): Boolean;
+var
+  aAttachment: string;
+begin
+  aAttachment := UploadDoc(aPeerID, aFileName, aTitle);
+  if aAttachment.IsEmpty then
+    Exit(False);
+  Result := SendMessage(aPeerID, EmptyStr, EmptyStr, aAttachment);
 end;
 
 

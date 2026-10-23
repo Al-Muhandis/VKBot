@@ -3,7 +3,8 @@ program gui_test;
 {$mode objfpc}{$H+}
 
 uses
-  Interfaces, Forms, GuiTestRunner, VKBotFrameworkTests, VKWebhookTests, VKDeeplinkTests
+  Interfaces, Forms, GuiTestRunner, VKBotFrameworkTests, VKWebhookTests, VKDeeplinkTests,
+  VKMediaTests
   ;
 
 {$R *.res}
