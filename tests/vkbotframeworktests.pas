@@ -371,6 +371,28 @@ type
     procedure TestWasPostCalled;
   end;
 
+  { TMessagesMethodsTests — reply_to / pin / typing / history }
+  TMessagesMethodsTests = class(TTestCase)
+  private
+    fBot: TTestVKBot;
+    fMsgData: TJSONObject;
+  protected
+    procedure SetUp; override;
+    procedure TearDown; override;
+  published
+    procedure TestSendMessage_ReplyToParam;
+    procedure TestSendMessage_NoReplyToByDefault;
+    procedure TestMessageReply_WrapperPassesReplyTo;
+    procedure TestPinMessage;
+    procedure TestPinMessage_ZeroCMID_NoCall;
+    procedure TestUnpinMessage;
+    procedure TestSetActivity_DefaultTyping;
+    procedure TestSetActivity_Audiomessage;
+    procedure TestGetHistory_DefaultParams;
+    procedure TestGetHistory_CustomParams;
+    procedure TestGetHistory_ResultIsCallerOwned;
+  end;
+
   { TLongPollResponseTests — обработка ответов LongPoll (ts/failed) }
   TLongPollTestBot = class(TMockVKBot)
   public
@@ -2521,6 +2543,152 @@ begin
   CheckTrue(TMockHTTPClient.WasPostCalled, 'После PostFile запись POST должна быть');
 end;
 
+{ TMessagesMethodsTests }
+
+procedure TMessagesMethodsTests.SetUp;
+begin
+  fBot := TTestVKBot.Create('test_token', 123456);
+  TMockHTTPClient.SetDefaultResponse('{"response":{"count":7,"items":[]}}');
+  fMsgData := nil;
+end;
+
+procedure TMessagesMethodsTests.TearDown;
+begin
+  FreeAndNil(fMsgData);
+  fBot.Free;
+end;
+
+procedure TMessagesMethodsTests.TestSendMessage_ReplyToParam;
+var
+  aURL: string;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckTrue(fBot.SendMessage(1, 'hi', EmptyStr, EmptyStr, 77));
+
+  aURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos('reply_to=77', aURL) > 0, 'reply_to должен передаваться');
+end;
+
+procedure TMessagesMethodsTests.TestSendMessage_NoReplyToByDefault;
+var
+  aURL: string;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckTrue(fBot.SendMessage(1, 'hi'));
+
+  aURL := TMockHTTPClient.GetLastURL;
+  CheckFalse(Pos('reply_to=', aURL) > 0, 'Без aReplyTo параметра быть не должно');
+end;
+
+procedure TMessagesMethodsTests.TestMessageReply_WrapperPassesReplyTo;
+var
+  aMessage: TVKMessage;
+begin
+  fMsgData := TJSONObject.Create;
+  fMsgData.Add('text', 'hi');
+  fMsgData.Add('peer_id', Int64(50));
+  aMessage := TVKMessage.Create(fBot, fMsgData);
+  try
+    TMockHTTPClient.ClearCalls;
+    aMessage.Reply('answer', EmptyStr, EmptyStr, 33);
+
+    CheckTrue(Pos('reply_to=33', TMockHTTPClient.GetLastURL) > 0,
+      'TVKMessage.Reply должен пробрасывать aReplyTo');
+  finally
+    aMessage.Free;
+  end;
+end;
+
+procedure TMessagesMethodsTests.TestPinMessage;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckTrue(fBot.PinMessage(100, 9));
+
+  CheckTrue(TMockHTTPClient.WasCalled('messages.pin'), 'Должен вызываться messages.pin');
+  CheckTrue(TMockHTTPClient.WasCalled('peer_id=100'));
+  CheckTrue(TMockHTTPClient.WasCalled('conversation_message_id=9'),
+    'Должен передаваться conversation_message_id');
+end;
+
+procedure TMessagesMethodsTests.TestPinMessage_ZeroCMID_NoCall;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckFalse(fBot.PinMessage(100, 0));
+  CheckEquals(0, TMockHTTPClient.GetCallCount, 'Нулевой cmid не должен давать вызов');
+end;
+
+procedure TMessagesMethodsTests.TestUnpinMessage;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckTrue(fBot.UnpinMessage(100));
+
+  CheckTrue(TMockHTTPClient.WasCalled('messages.unpin'), 'Должен вызываться messages.unpin');
+  CheckTrue(TMockHTTPClient.WasCalled('peer_id=100'));
+end;
+
+procedure TMessagesMethodsTests.TestSetActivity_DefaultTyping;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckTrue(fBot.SetActivity(5));
+
+  CheckTrue(TMockHTTPClient.WasCalled('messages.setActivity'), 'Должен вызываться messages.setActivity');
+  CheckTrue(TMockHTTPClient.WasCalled('type=typing'), 'По умолчанию — typing');
+  CheckTrue(TMockHTTPClient.WasCalled('peer_id=5'));
+end;
+
+procedure TMessagesMethodsTests.TestSetActivity_Audiomessage;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckTrue(fBot.SetActivity(5, 'audiomessage'));
+
+  CheckTrue(TMockHTTPClient.WasCalled('type=' + EncodeURLElement('audiomessage')),
+    'Должен передаваться произвольный тип активности');
+end;
+
+procedure TMessagesMethodsTests.TestGetHistory_DefaultParams;
+var
+  aURL: string;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckNotNull(fBot.GetHistory(300));
+
+  aURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos('messages.getHistory', aURL) > 0, 'Должен вызываться messages.getHistory');
+  CheckTrue(Pos('peer_id=300', aURL) > 0);
+  CheckTrue(Pos('count=20', aURL) > 0, 'По умолчанию 20 сообщений');
+  CheckFalse(Pos('offset=', aURL) > 0, 'Нулевой offset не должен передаваться');
+end;
+
+procedure TMessagesMethodsTests.TestGetHistory_CustomParams;
+var
+  aURL: string;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckNotNull(fBot.GetHistory(300, 5, 10));
+
+  aURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos('count=5', aURL) > 0);
+  CheckTrue(Pos('offset=10', aURL) > 0);
+end;
+
+procedure TMessagesMethodsTests.TestGetHistory_ResultIsCallerOwned;
+var
+  aHistory: TJSONData;
+  aCount: Integer;
+begin
+  aHistory := fBot.GetHistory(300);
+  CheckNotNull(aHistory, 'История должна возвращаться');
+  try
+    { любой следующий вызов затирает внутренний JSON бота —
+      результат GetHistory обязан пережить это (клония) }
+    fBot.SendMessage(1, 'next call');
+    aCount := TJSONObject(aHistory).Get('count', 0);
+    CheckEquals(7, aCount, 'Результат должен жить после следующих вызовов бота');
+  finally
+    aHistory.Free;
+  end;
+end;
+
 initialization
   RegisterTest(TEventTypeHelperTests);
   RegisterTest(TMessageReplyTests);
@@ -2540,6 +2708,7 @@ initialization
   RegisterTest(TVKLinksAndEnumsTests);
   RegisterTest(TLongPollResponseTests);
   RegisterTest(TUploadInfraTests);
+  RegisterTest(TMessagesMethodsTests);
   RegisterTest(TIntegrationTests);
 
 end.

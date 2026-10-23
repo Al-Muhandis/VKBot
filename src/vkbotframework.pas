@@ -46,8 +46,12 @@ type
   public
     constructor Create(aBot: TVKBot; aData: TJSONObject);
 
-    procedure Reply(const aText: string; const aKeyboard: string = ''; const aAttachment: string = '');
-    procedure Send(const aText: string; aPeerID: Int64 = 0; const aKeyboard: string = ''; const aAttachment: string = '');
+    { aReplyTo — conversation_message_id of the message to quote
+      (use ConversationMessageId of an incoming message) }
+    procedure Reply(const aText: string; const aKeyboard: string = ''; const aAttachment: string = '';
+      aReplyTo: Int64 = 0);
+    procedure Send(const aText: string; aPeerID: Int64 = 0; const aKeyboard: string = '';
+      const aAttachment: string = ''; aReplyTo: Int64 = 0);
 
     property ConversationMessageId: Int64  read GetConversationMessageId;
 
@@ -81,7 +85,8 @@ type
     constructor Create(aBot: TVKBot; aData: TJSONObject);
 
     { Send a text message back to the same peer }
-    procedure Reply(const aText: string; const aKeyboard: string = ''; const aAttachment: string = '');
+    procedure Reply(const aText: string; const aKeyboard: string = ''; const aAttachment: string = '';
+      aReplyTo: Int64 = 0);
     { Acknowledge/callback answer for inline button click (messages.sendMessageEventAnswer) }
     function Answer(const aType: TVKEventDataType = dtUnspecified; const aText: string = '';
       const aKeyboard: String = ''; const aLink: string = ''): Boolean;
@@ -116,8 +121,10 @@ type
     constructor Create(aBot: TVKBot; aData: TJSONObject);
 
     { Send a text message back to the same peer }
-    procedure Reply(const aText: string; const aKeyboard: string = ''; const aAttachment: string = '');
-    procedure Send(const aText: string; aPeerID: Int64 = 0; const aKeyboard: string = ''; const aAttachment: string = '');
+    procedure Reply(const aText: string; const aKeyboard: string = ''; const aAttachment: string = '';
+      aReplyTo: Int64 = 0);
+    procedure Send(const aText: string; aPeerID: Int64 = 0; const aKeyboard: string = '';
+      const aAttachment: string = ''; aReplyTo: Int64 = 0);
 
     property ConversationMessageId: Int64  read GetConversationMessageId;
     property MessageID:             Int64  read GetMessageID;
@@ -209,8 +216,16 @@ type
     procedure ProcessUpdate(const aUpdate: TJSONObject);
 
     { API methods }
+    { aReplyTo — conversation_message_id of the message to quote (0 = plain send) }
     function SendMessage(aPeerID: Int64; const aText: string; const aKeyboard: string = '';
-      const aAttachment: string = ''): Boolean;
+      const aAttachment: string = ''; aReplyTo: Int64 = 0): Boolean;
+    { Fetch recent dialog history (messages.getHistory), caller-owned result }
+    function GetHistory(aPeerID: Int64; aCount: Integer = 20; aOffset: Int64 = 0): TJSONData;
+    { Pin/unpin the chat's pinned message (aConversationMessageID = cmid) }
+    function PinMessage(aPeerID, aConversationMessageID: Int64): Boolean;
+    function UnpinMessage(aPeerID: Int64): Boolean;
+    { "typing..." indicator: aType is 'typing' or 'audiomessage' }
+    function SetActivity(aPeerID: Int64; const aType: string = 'typing'): Boolean;
     { You can specify MessageID or CMID (conversation_message_id) to indentify message to edit.
     For example You can pass MessageID as 0 and CMID as some nonzero value }
     function EditMessage(aPeerID, aMessageID: Int64; const aText: string; aCMID: Int64 = 0;
@@ -340,14 +355,16 @@ begin
   Result := fData.Get('ref_source', EmptyStr);
 end;
 
-procedure TVKMessage.Reply(const aText: string; const aKeyboard: string = ''; const aAttachment: string = '');
+procedure TVKMessage.Reply(const aText: string; const aKeyboard: string; const aAttachment: string;
+  aReplyTo: Int64);
 begin
-  Send(aText, PeerID, aKeyboard, aAttachment);
+  Send(aText, PeerID, aKeyboard, aAttachment, aReplyTo);
 end;
 
-procedure TVKMessage.Send(const aText: string; aPeerID: Int64 = 0; const aKeyboard: string = ''; const aAttachment: string = '');
+procedure TVKMessage.Send(const aText: string; aPeerID: Int64; const aKeyboard: string;
+  const aAttachment: string; aReplyTo: Int64);
 begin
-  fBot.SendMessage(specialize IfThen<Int64>(aPeerID = 0, PeerID, aPeerID), aText, aKeyboard, aAttachment);
+  fBot.SendMessage(specialize IfThen<Int64>(aPeerID = 0, PeerID, aPeerID), aText, aKeyboard, aAttachment, aReplyTo);
 end;
 
 { TVKMessageEvent }
@@ -384,9 +401,10 @@ begin
   Result := fData.Get('payload', TJSONObject(nil));
 end;
 
-procedure TVKMessageEvent.Reply(const aText: string; const aKeyboard: string = ''; const aAttachment: string = '');
+procedure TVKMessageEvent.Reply(const aText: string; const aKeyboard: string; const aAttachment: string;
+  aReplyTo: Int64);
 begin
-  fBot.SendMessage(PeerID, aText, aKeyboard, aAttachment);
+  fBot.SendMessage(PeerID, aText, aKeyboard, aAttachment, aReplyTo);
 end;
 
 function TVKMessageEvent.Answer(const aType: TVKEventDataType; const aText: string; const aKeyboard: String;
@@ -429,14 +447,16 @@ begin
   Result := fData.Get('from_id', Int64(0));
 end;
 
-procedure TVKMessageReply.Reply(const aText: string; const aKeyboard: string = ''; const aAttachment: string = '');
+procedure TVKMessageReply.Reply(const aText: string; const aKeyboard: string; const aAttachment: string;
+  aReplyTo: Int64);
 begin
-  Send(aText, PeerID, aKeyboard, aAttachment);
+  Send(aText, PeerID, aKeyboard, aAttachment, aReplyTo);
 end;
 
-procedure TVKMessageReply.Send(const aText: string; aPeerID: Int64 = 0; const aKeyboard: string = ''; const aAttachment: string = '');
+procedure TVKMessageReply.Send(const aText: string; aPeerID: Int64; const aKeyboard: string;
+  const aAttachment: string; aReplyTo: Int64);
 begin
-  fBot.SendMessage(specialize IfThen<Int64>(aPeerID = 0, PeerID, aPeerID), aText, aKeyboard, aAttachment);
+  fBot.SendMessage(specialize IfThen<Int64>(aPeerID = 0, PeerID, aPeerID), aText, aKeyboard, aAttachment, aReplyTo);
 end;
 
 { TStringHash }
@@ -862,7 +882,8 @@ begin
   Result := _RandomID;
 end;
 
-function TVKBot.SendMessage(aPeerID: Int64; const aText: string; const aKeyboard: string = ''; const aAttachment: string = ''): Boolean;
+function TVKBot.SendMessage(aPeerID: Int64; const aText: string; const aKeyboard: string;
+  const aAttachment: string; aReplyTo: Int64): Boolean;
 var
   aParams: TJSONObject;
 begin
@@ -876,7 +897,78 @@ begin
       aParams.Add('keyboard', aKeyboard);
     if not aAttachment.IsEmpty then
       aParams.Add('attachment', aAttachment);
+    if aReplyTo <> 0 then
+      aParams.Add('reply_to', aReplyTo);
     Result := Assigned(APICall('messages.send', aParams));
+  finally
+    aParams.Free;
+  end;
+end;
+
+function TVKBot.GetHistory(aPeerID: Int64; aCount: Integer; aOffset: Int64): TJSONData;
+var
+  aParams: TJSONObject;
+  aResponse: TJSONData;
+begin
+  aParams := TJSONObject.Create;
+  try
+    aParams.Add('peer_id', aPeerID);
+    aParams.Add('count',   aCount);
+    if aOffset > 0 then
+      aParams.Add('offset', aOffset);
+
+    aResponse := APICall('messages.getHistory', aParams);
+    if Assigned(aResponse) then
+      Result := aResponse.Clone
+    else
+      Result := nil;
+  finally
+    aParams.Free;
+  end;
+end;
+
+function TVKBot.PinMessage(aPeerID, aConversationMessageID: Int64): Boolean;
+var
+  aParams: TJSONObject;
+begin
+  Result  := False;
+  if aConversationMessageID = 0 then
+    Exit;
+  aParams := TJSONObject.Create;
+  try
+    aParams.Add('peer_id', aPeerID);
+    aParams.Add('conversation_message_id', aConversationMessageID);
+    Result := Assigned(APICall('messages.pin', aParams));
+  finally
+    aParams.Free;
+  end;
+end;
+
+function TVKBot.UnpinMessage(aPeerID: Int64): Boolean;
+var
+  aParams: TJSONObject;
+begin
+  aParams := TJSONObject.Create;
+  try
+    aParams.Add('peer_id', aPeerID);
+    Result := Assigned(APICall('messages.unpin', aParams));
+  finally
+    aParams.Free;
+  end;
+end;
+
+function TVKBot.SetActivity(aPeerID: Int64; const aType: string): Boolean;
+var
+  aParams: TJSONObject;
+begin
+  Result  := False;
+  if aType.IsEmpty then
+    Exit;
+  aParams := TJSONObject.Create;
+  try
+    aParams.Add('peer_id', aPeerID);
+    aParams.Add('type',    aType);
+    Result := Assigned(APICall('messages.setActivity', aParams));
   finally
     aParams.Free;
   end;
