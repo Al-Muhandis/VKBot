@@ -48,6 +48,10 @@ type
     procedure TestAddRow;
     procedure TestBuildWithPayload;
     procedure TestOneTimeAndInlineFlags;
+    procedure TestAddOpenLinkButton;
+    procedure TestBuildRemovesEmptyRows;
+    procedure TestUnspecifiedColorOmitted;
+    procedure TestVkpayButtonColorOmitted;
   end;
 
   { TBotCommandTests }
@@ -60,11 +64,7 @@ type
     fMsgData: TJSONObject;
     fReceivedPeerID: Int64;
     fReceivedText: String;
-    procedure RunMethodProcessMessage;
     procedure PayloadCommandHandler(const {%H-}aMsg: TVKMessage; const aArgs: TStringArray);
-    procedure TestPayloadCommandCaseInsensitive;
-    procedure TestPayloadWithInvalidJSON;
-    procedure TestPayloadWithoutCommandField;
     procedure UnknownHandler(const {%H-}aMsg: TVKMessage; const {%H-}aArgs: TStringArray);
   protected
     procedure SetUp; override;
@@ -77,6 +77,9 @@ type
     procedure TestCommandCaseInsensitive;
     procedure TestUnknownCommandNotHandled;
     procedure TestPayloadCommandHandling;
+    procedure TestPayloadCommandCaseInsensitive;
+    procedure TestPayloadWithInvalidJSON;
+    procedure TestPayloadWithoutCommandField;
   end;
 
   { TBotMessageHandlerTests }
@@ -211,6 +214,7 @@ type
     procedure TestUsersGetWithFields;
     procedure TestAPICallReturnsCorrectData;
     procedure TestMultipleAPICallsLogged;
+    procedure TestSendMessageContainsRandomId;
   end;
 
   { TIntegrationTests }
@@ -308,6 +312,46 @@ type
     procedure TestMessageReplyFiresBothHandlers;
     { nil object does not crash }
     procedure TestNilReplyObjectDoesNotCrash;
+  end;
+
+  { TSendMessageEventAnswerTests — messages.sendMessageEventAnswer }
+  TSendMessageEventAnswerTests = class(TTestCase)
+  private
+    fBot: TTestVKBot;
+  protected
+    procedure SetUp; override;
+    procedure TearDown; override;
+  published
+    procedure TestZeroUserID_NoCall;
+    procedure TestZeroPeerID_NoCall;
+    procedure TestEmptyEventID_NoCall;
+    procedure TestNoEventData_WhenNothingSpecified;
+    procedure TestSnackbarTextSent;
+    procedure TestKeyboardPassedInEventData;
+    procedure TestLinkPassedInEventData;
+  end;
+
+  { TUploadServerTests — docs.getMessagesUploadServer }
+  TUploadServerTests = class(TTestCase)
+  private
+    fBot: TTestVKBot;
+  protected
+    procedure SetUp; override;
+    procedure TearDown; override;
+  published
+    procedure TestDocType;
+    procedure TestAudioMessageType;
+    procedure TestUnspecifiedType_OmitsTypeParam;
+    procedure TestPeerID_OmittedByDefault;
+  end;
+
+  { TVKLinksAndEnumsTests — helpers из VKTypes }
+  TVKLinksAndEnumsTests = class(TTestCase)
+  published
+    procedure TestVKUserLink;
+    procedure TestVKChatLink;
+    procedure TestEventDataTypeToString;
+    procedure TestButtonColorToString_Unspecified;
   end;
 
 implementation
@@ -563,6 +607,75 @@ begin
   end;
 end;
 
+procedure TKeyboardTests.TestAddOpenLinkButton;
+var
+  aJSON: TJSONObject;
+  aButton: TJSONObject;
+  aAction: TJSONObject;
+begin
+  fKeyboard.AddOpenLinkButton('Site', 'https://example.com');
+
+  aJSON := GetJSON(fKeyboard.Build) as TJSONObject;
+  try
+    aButton  := (aJSON.Arrays['buttons'].Items[0] as TJSONArray).Items[0] as TJSONObject;
+    aAction  := aButton.Find('action') as TJSONObject;
+
+    CheckEquals('open_link', aAction.Get('type', ''), 'Тип действия open_link');
+    CheckEquals('Site', aAction.Get('label', ''), 'Текст кнопки');
+    CheckEquals('https://example.com', aAction.Get('link', ''), 'Ссылка кнопки');
+    CheckNull(aButton.Find('color'), 'open_link-кнопка не должна иметь цвет');
+  finally
+    aJSON.Free;
+  end;
+end;
+
+procedure TKeyboardTests.TestBuildRemovesEmptyRows;
+var
+  aJSON: TJSONObject;
+begin
+  fKeyboard.AddButton('A');
+  fKeyboard.AddRow; { незаполненная строка — должна удалиться в Build }
+
+  aJSON := GetJSON(fKeyboard.Build) as TJSONObject;
+  try
+    CheckEquals(1, aJSON.Arrays['buttons'].Count, 'Пустые строки должны удаляться');
+  finally
+    aJSON.Free;
+  end;
+end;
+
+procedure TKeyboardTests.TestUnspecifiedColorOmitted;
+var
+  aJSON: TJSONObject;
+  aButton: TJSONObject;
+begin
+  fKeyboard.AddButton('Без цвета', bcUnspecified, btText, '{"command":"x"}');
+
+  aJSON := GetJSON(fKeyboard.Build) as TJSONObject;
+  try
+    aButton := (aJSON.Arrays['buttons'].Items[0] as TJSONArray).Items[0] as TJSONObject;
+    CheckNull(aButton.Find('color'), 'bcUnspecified не должен добавлять поле color');
+  finally
+    aJSON.Free;
+  end;
+end;
+
+procedure TKeyboardTests.TestVkpayButtonColorOmitted;
+var
+  aJSON: TJSONObject;
+  aButton: TJSONObject;
+begin
+  fKeyboard.AddButton('Оплатить', bcPrimary, btVKPat);
+
+  aJSON := GetJSON(fKeyboard.Build) as TJSONObject;
+  try
+    aButton := (aJSON.Arrays['buttons'].Items[0] as TJSONArray).Items[0] as TJSONObject;
+    CheckNull(aButton.Find('color'), 'vkpay-кнопка не должна иметь цвет');
+  finally
+    aJSON.Free;
+  end;
+end;
+
 { TBotCommandTests }
 
 procedure TBotCommandTests.SetUp;
@@ -590,11 +703,6 @@ begin
   fHandlerCalled := True;
   fReceivedText := aMsg.Text;
   fReceivedPeerID := aMsg.PeerID;
-end;
-
-procedure TBotCommandTests.RunMethodProcessMessage;
-begin
-  fBot.ProcessMessage(fMsgData);
 end;
 
 procedure TBotCommandTests.PayloadCommandHandler(const aMsg: TVKMessage; const aArgs: TStringArray);
@@ -647,6 +755,7 @@ end;
 procedure TBotCommandTests.TestPayloadWithInvalidJSON;
 begin
   fBot.CommandHandlers['test']:=@PayloadCommandHandler;
+  fBot.OnMessage:=@DummyMessageHandler;
 
   fMsgData := TJSONObject.Create;
   try
@@ -654,8 +763,12 @@ begin
     fMsgData.Add('payload', '{invalid json}'); // Невалидный JSON
     fMsgData.Add('peer_id', Int64(789));
 
-    // Не должно вызвать исключение
-    CheckException(@RunMethodProcessMessage, Exception, 'Невалидный payload не должен ломать обработку');
+    // Битый payload не должен ронять обработку: команда не зовётся,
+    // но сообщение доходит до обычного message-хендлера
+    fBot.ProcessMessage(fMsgData);
+
+    CheckFalse(fCommandCalled, 'Команда по битому payload не должна вызываться');
+    CheckTrue(fHandlerCalled, 'Битый payload не должен ломать обработку сообщения');
   finally
     FreeAndNil(fMsgData);
   end;
@@ -1169,6 +1282,17 @@ begin
   CheckTrue(Pos('peer_id=1', TMockHTTPClient.GetCall(0)) > 0, 'Первый вызов с peer_id=1');
   CheckTrue(Pos('peer_id=2', TMockHTTPClient.GetCall(1)) > 0, 'Второй вызов с peer_id=2');
   CheckTrue(Pos('peer_id=3', TMockHTTPClient.GetCall(2)) > 0, 'Третий вызов с peer_id=3');
+end;
+
+procedure TAPICallTests.TestSendMessageContainsRandomId;
+var
+  aURL: string;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckTrue(fBot.SendMessage(123, 'hello'));
+
+  aURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos('random_id=', aURL) > 0, 'messages.send должен передавать random_id');
 end;
 
 { TIntegrationTests }
@@ -1972,6 +2096,181 @@ begin
   end;
 end;
 
+{ TSendMessageEventAnswerTests }
+
+procedure TSendMessageEventAnswerTests.SetUp;
+begin
+  fBot := TTestVKBot.Create('test_token', 123456);
+  TMockHTTPClient.SetDefaultResponse('{"response":1}');
+end;
+
+procedure TSendMessageEventAnswerTests.TearDown;
+begin
+  fBot.Free;
+end;
+
+procedure TSendMessageEventAnswerTests.TestZeroUserID_NoCall;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckFalse(fBot.SendMessageEventAnswer(0, 200, 'evt'), 'Нулевой user_id должен дать False');
+  CheckEquals(0, TMockHTTPClient.GetCallCount, 'Нулевой user_id не должен давать HTTP-вызов');
+end;
+
+procedure TSendMessageEventAnswerTests.TestZeroPeerID_NoCall;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckFalse(fBot.SendMessageEventAnswer(100, 0, 'evt'), 'Нулевой peer_id должен дать False');
+  CheckEquals(0, TMockHTTPClient.GetCallCount, 'Нулевой peer_id не должен давать HTTP-вызов');
+end;
+
+procedure TSendMessageEventAnswerTests.TestEmptyEventID_NoCall;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckFalse(fBot.SendMessageEventAnswer(100, 200, ''), 'Пустой event_id должен дать False');
+  CheckEquals(0, TMockHTTPClient.GetCallCount, 'Пустой event_id не должен давать HTTP-вызов');
+end;
+
+procedure TSendMessageEventAnswerTests.TestNoEventData_WhenNothingSpecified;
+var
+  aURL: string;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckTrue(fBot.SendMessageEventAnswer(100, 200, 'evt', dtUnspecified, '', '', ''));
+
+  aURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos('messages.sendMessageEventAnswer', aURL) > 0, 'Метод должен вызываться');
+  CheckTrue(Pos('event_id=evt', aURL) > 0, 'event_id должен передаваться');
+  CheckFalse(Pos('event_data=', aURL) > 0, 'Пустой ответ не должен добавлять event_data');
+end;
+
+procedure TSendMessageEventAnswerTests.TestSnackbarTextSent;
+var
+  aURL: string;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckTrue(fBot.SendMessageEventAnswer(100, 200, 'evt', dtShowSnackbar, 'Done'));
+
+  aURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos('event_data=', aURL) > 0, 'Должен быть параметр event_data');
+  CheckTrue(Pos(EncodeURLElement('show_snackbar'), aURL) > 0, 'Тип snackbar должен передаваться');
+  CheckTrue(Pos('Done', aURL) > 0, 'Текст должен передаваться');
+end;
+
+procedure TSendMessageEventAnswerTests.TestKeyboardPassedInEventData;
+var
+  aKB: TVKKeyboard;
+  aURL: string;
+begin
+  aKB := TVKKeyboard.Create;
+  try
+    aKB.AddButton('Меню', bcPrimary, btCallback, '{"command":"menu"}');
+
+    TMockHTTPClient.ClearCalls;
+    CheckTrue(fBot.SendMessageEventAnswer(100, 200, 'evt', dtUnspecified, '', aKB.Build, ''));
+
+    aURL := TMockHTTPClient.GetLastURL;
+    CheckTrue(Pos('event_data=', aURL) > 0, 'Клавиатура должна попадать в event_data');
+    CheckTrue(Pos('keyboard', aURL) > 0, 'Клавиатура должна передаваться');
+  finally
+    aKB.Free;
+  end;
+end;
+
+procedure TSendMessageEventAnswerTests.TestLinkPassedInEventData;
+var
+  aURL: string;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckTrue(fBot.SendMessageEventAnswer(100, 200, 'evt', dtOpenLink, '', '', 'https://example.com'));
+
+  aURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos(EncodeURLElement('open_link'), aURL) > 0, 'Тип open_link должен передаваться');
+  CheckTrue(Pos('example.com', aURL) > 0, 'Ссылка должна передаваться');
+end;
+
+{ TUploadServerTests }
+
+procedure TUploadServerTests.SetUp;
+begin
+  fBot := TTestVKBot.Create('test_token', 123456);
+  TMockHTTPClient.SetDefaultResponse('{"response":{"upload_url":"https://pu.vk.com/x"}}');
+end;
+
+procedure TUploadServerTests.TearDown;
+begin
+  fBot.Free;
+end;
+
+procedure TUploadServerTests.TestDocType;
+begin
+  TMockHTTPClient.ClearCalls;
+  fBot.GetMessagesUploadServer(dfDoc, 100);
+
+  CheckTrue(TMockHTTPClient.WasCalled('docs.getMessagesUploadServer'), 'Должен вызываться метод');
+  CheckTrue(TMockHTTPClient.WasCalled('type=doc'), 'Тип doc должен передаваться');
+  CheckTrue(TMockHTTPClient.WasCalled('peer_id=100'), 'peer_id должен передаваться');
+end;
+
+procedure TUploadServerTests.TestAudioMessageType;
+begin
+  TMockHTTPClient.ClearCalls;
+  fBot.GetMessagesUploadServer(dfAudioMessage, 100);
+
+  CheckTrue(TMockHTTPClient.WasCalled('type=' + EncodeURLElement('audio_message')),
+    'Тип audio_message должен передаваться');
+end;
+
+procedure TUploadServerTests.TestUnspecifiedType_OmitsTypeParam;
+var
+  aURL: string;
+begin
+  TMockHTTPClient.ClearCalls;
+  fBot.GetMessagesUploadServer(dfUnspecified);
+
+  aURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos('docs.getMessagesUploadServer', aURL) > 0, 'Должен вызываться метод');
+  CheckFalse(Pos('type=', aURL) > 0, 'dfUnspecified не должен давать параметр type');
+end;
+
+procedure TUploadServerTests.TestPeerID_OmittedByDefault;
+var
+  aURL: string;
+begin
+  TMockHTTPClient.ClearCalls;
+  fBot.GetMessagesUploadServer(dfDoc);
+
+  aURL := TMockHTTPClient.GetLastURL;
+  CheckFalse(Pos('peer_id=', aURL) > 0, 'Без aPeerID параметр peer_id не нужен');
+end;
+
+{ TVKLinksAndEnumsTests }
+
+procedure TVKLinksAndEnumsTests.TestVKUserLink;
+begin
+  CheckEquals('https://vk.com/id123456789', VKUserLink(123456789));
+end;
+
+procedure TVKLinksAndEnumsTests.TestVKChatLink;
+begin
+  CheckEquals('https://vk.me/id42', VKChatLink(42));
+end;
+
+procedure TVKLinksAndEnumsTests.TestEventDataTypeToString;
+begin
+  CheckEquals('',               VKEventDataTypeToString(dtUnspecified));
+  CheckEquals('close_keyboard', VKEventDataTypeToString(dtCloseKeyboard));
+  CheckEquals('show_snackbar',  VKEventDataTypeToString(dtShowSnackbar));
+  CheckEquals('open_link',      VKEventDataTypeToString(dtOpenLink));
+  CheckEquals('open_app',       VKEventDataTypeToString(dtOpenApp));
+  CheckEquals('start_flow',     VKEventDataTypeToString(dtStartFlow));
+end;
+
+procedure TVKLinksAndEnumsTests.TestButtonColorToString_Unspecified;
+begin
+  CheckEquals('',        VKButtonColorToString(bcUnspecified));
+  CheckEquals('primary', VKButtonColorToString(bcPrimary));
+end;
+
 initialization
   RegisterTest(TEventTypeHelperTests);
   RegisterTest(TMessageReplyTests);
@@ -1986,6 +2285,9 @@ initialization
   RegisterTest(TMessageEventHandlerTests);
   RegisterTest(TProcessUpdateMessageEventTests);
   RegisterTest(TAPICallTests);
+  RegisterTest(TSendMessageEventAnswerTests);
+  RegisterTest(TUploadServerTests);
+  RegisterTest(TVKLinksAndEnumsTests);
   RegisterTest(TIntegrationTests);
 
 end.

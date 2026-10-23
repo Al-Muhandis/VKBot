@@ -5,7 +5,7 @@ unit VKFCLHTTPClientBroker;
 interface
 
 uses
-  Classes, SysUtils, fphttpclient, vkbasehttpclient
+  Classes, SysUtils, fphttpclient, vkbasehttpclient, VKTypes
   ;
 
 type
@@ -29,6 +29,10 @@ constructor TFCLHTTPClient.Create(aOwner: TComponent);
 begin
   inherited Create(aOwner);
   fClient := TFPHTTPClient.Create(nil);
+  fClient.ConnectTimeout := 10000;
+  { Must exceed VK_LONG_POLL_WAIT: the LongPoll server holds an idle
+    connection for the whole wait period before replying }
+  fClient.IOTimeout := (VK_LONG_POLL_WAIT + 10) * 1000;
 end;
 
 destructor TFCLHTTPClient.Destroy;

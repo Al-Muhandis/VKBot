@@ -3,7 +3,7 @@ program console_test;
 {$mode objfpc}{$H+}
 
 uses
-  Classes, consoletestrunner, VKBotFrameworkTests
+  Classes, consoletestrunner, VKBotFrameworkTests, VKWebhookTests, VKDeeplinkTests
   ;
 
 type

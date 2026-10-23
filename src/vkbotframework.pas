@@ -661,17 +661,27 @@ begin
     aPayloadStr := aMsg.GetPayload;
     if aPayloadStr <> '' then
     begin
-      aPayloadJSON := GetJSON(aPayloadStr) as TJSONObject;
+      { Payload comes from the client side: broken JSON must not abort
+        the update batch, so fall back to the usual pipeline }
+      try
+        aPayloadJSON := GetJSON(aPayloadStr) as TJSONObject;
+      except
+        on E: Exception do
+        begin
+          DoLog(llWarning, Format('Invalid message payload: %s', [E.Message]));
+          aPayloadJSON := nil;
+        end;
+      end;
       if Assigned(aPayloadJSON) then
-      begin
+      try
         aCommand := LowerCase(aPayloadJSON.Get('command', EmptyStr));
         if (aCommand <> '') and fCommands.GetValue(aCommand, aCmdHandler) then
         begin
           aCmdHandler(aMsg, []);
           DoLog(llInfo, Format('Button command: %s by user %d', [aCommand, aMsg.FromID]));
-          aPayloadJSON.Free;
           Exit;
         end;
+      finally
         aPayloadJSON.Free;
       end;
     end;
@@ -885,7 +895,7 @@ begin
     aParams.Add('peer_id', aPeerID);
     aParams.Add('event_id', aEventID);
 
-    if (aType<>dtUnspecified) or (not aText.IsEmpty) or (not aLink.IsEmpty) then
+    if (aType<>dtUnspecified) or (not aText.IsEmpty) or (not aKeyboard.IsEmpty) or (not aLink.IsEmpty) then
     begin
       aEventData := TJSONObject.Create;
       if aType<>dtUnspecified then
