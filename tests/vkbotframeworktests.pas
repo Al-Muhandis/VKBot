@@ -53,6 +53,7 @@ type
     procedure TestBuildRemovesEmptyRows;
     procedure TestUnspecifiedColorOmitted;
     procedure TestVkpayButtonColorOmitted;
+    procedure TestLocationButtonColorOmitted;
   end;
 
   { TBotCommandTests }
@@ -695,6 +696,25 @@ begin
   try
     aButton := (aJSON.Arrays['buttons'].Items[0] as TJSONArray).Items[0] as TJSONObject;
     CheckNull(aButton.Find('color'), 'vkpay-кнопка не должна иметь цвет');
+  finally
+    aJSON.Free;
+  end;
+end;
+
+procedure TKeyboardTests.TestLocationButtonColorOmitted;
+var
+  aJSON: TJSONObject;
+  aButton: TJSONObject;
+begin
+  { По документации VK цвет допустим только для text и callback }
+  fKeyboard.AddButton('Where', bcPrimary, btLocation);
+
+  aJSON := GetJSON(fKeyboard.Build) as TJSONObject;
+  try
+    aButton := (aJSON.Arrays['buttons'].Items[0] as TJSONArray).Items[0] as TJSONObject;
+    CheckEquals('location', (aButton.Find('action') as TJSONObject).Get('type', ''),
+      'Тип действия location');
+    CheckNull(aButton.Find('color'), 'location-кнопка не должна иметь цвет');
   finally
     aJSON.Free;
   end;

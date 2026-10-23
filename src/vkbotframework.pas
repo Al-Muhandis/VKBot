@@ -1015,7 +1015,8 @@ begin
   if not aLink.IsEmpty then
     aAction.Add('link', aLink);
   aButton.Add('action', aAction);
-  if (aColor<>bcUnspecified) and (aType in [btText, btCallback, btLocation]) then
+  { VK allows color only for text and callback buttons }
+  if (aColor<>bcUnspecified) and (aType in [btText, btCallback]) then
     aButton.Add('color', VKButtonColorToString(aColor));
   aCurrentRow.Add(aButton);
   Result := Self;
