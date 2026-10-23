@@ -393,6 +393,24 @@ type
     procedure TestGetHistory_ResultIsCallerOwned;
   end;
 
+  { TChatMethodsTests — групповые чаты }
+  TChatMethodsTests = class(TTestCase)
+  private
+    fBot: TTestVKBot;
+  protected
+    procedure SetUp; override;
+    procedure TearDown; override;
+  published
+    procedure TestCreateChat_ParamsAndChatID;
+    procedure TestCreateChat_EmptyTitle_NoCall;
+    procedure TestCreateChat_NoUsers_NoCall;
+    procedure TestEditChatTitle;
+    procedure TestEditChatTitle_EmptyTitle_NoCall;
+    procedure TestGetConversationById;
+    procedure TestGetConversationMembers_DefaultParams;
+    procedure TestGetConversationMembers_CustomParams;
+  end;
+
   { TLongPollResponseTests — обработка ответов LongPoll (ts/failed) }
   TLongPollTestBot = class(TMockVKBot)
   public
@@ -2689,6 +2707,122 @@ begin
   end;
 end;
 
+{ TChatMethodsTests }
+
+procedure TChatMethodsTests.SetUp;
+begin
+  fBot := TTestVKBot.Create('test_token', 123456);
+  TMockHTTPClient.SetDefaultResponse('{"response":{"count":0,"items":[]}}');
+end;
+
+procedure TChatMethodsTests.TearDown;
+begin
+  fBot.Free;
+end;
+
+procedure TChatMethodsTests.TestCreateChat_ParamsAndChatID;
+var
+  aChatID: Int64;
+  aURL: string;
+begin
+  TMockHTTPClient.ClearCalls;
+  TMockHTTPClient.AddResponse('messages.createChat', '{"response":42}');
+
+  aChatID := fBot.CreateChat([10, 20, 30], 'Team chat');
+
+  CheckEquals(Int64(42), aChatID, 'Должен возвращаться chat_id из ответа');
+  aURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos('messages.createChat', aURL) > 0, 'Должен вызываться messages.createChat');
+  CheckTrue(Pos('user_ids=' + EncodeURLElement('10,20,30'), aURL) > 0,
+    'Список пользователей должен уходить через запятую');
+  CheckTrue(Pos('title=Team' + EncodeURLElement(' ') + 'chat', aURL) > 0,
+    'Заголовок должен передаваться');
+end;
+
+procedure TChatMethodsTests.TestCreateChat_EmptyTitle_NoCall;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckEquals(Int64(0), fBot.CreateChat([10], EmptyStr), 'Пустой заголовок недопустим');
+  CheckEquals(0, TMockHTTPClient.GetCallCount, 'Вызова быть не должно');
+end;
+
+procedure TChatMethodsTests.TestCreateChat_NoUsers_NoCall;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckEquals(Int64(0), fBot.CreateChat([], 'Empty'), 'Чат без участников не создаётся');
+  CheckEquals(0, TMockHTTPClient.GetCallCount, 'Вызова быть не должно');
+end;
+
+procedure TChatMethodsTests.TestEditChatTitle;
+var
+  aURL: string;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckTrue(fBot.EditChatTitle(42, 'New title'));
+
+  aURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos('messages.editChat', aURL) > 0, 'Должен вызываться messages.editChat');
+  CheckTrue(Pos('chat_id=42', aURL) > 0);
+  CheckTrue(Pos('title=New' + EncodeURLElement(' ') + 'title', aURL) > 0);
+end;
+
+procedure TChatMethodsTests.TestEditChatTitle_EmptyTitle_NoCall;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckFalse(fBot.EditChatTitle(42, EmptyStr));
+  CheckEquals(0, TMockHTTPClient.GetCallCount, 'Пустой заголовок не должен уходить в API');
+end;
+
+procedure TChatMethodsTests.TestGetConversationById;
+var
+  aResult: TJSONData;
+  aURL: string;
+begin
+  TMockHTTPClient.ClearCalls;
+  TMockHTTPClient.AddResponse('getConversationsById',
+    '{"response":{"count":1,"conversations":[{"peer":{"id":2000000042},"chat_settings":{"title":"Team"}}]}}');
+
+  aResult := fBot.GetConversationById(2000000042);
+  try
+    CheckNotNull(aResult, 'Информация о чате должна возвращаться');
+    aURL := TMockHTTPClient.GetLastURL;
+    CheckTrue(Pos('messages.getConversationsById', aURL) > 0, 'Должен вызываться метод');
+    CheckTrue(Pos('peer_ids=2000000042', aURL) > 0, 'peer_ids должен передаваться');
+    CheckEquals('Team',
+      TJSONObject(aResult).Arrays['conversations'].Items[0].FindPath('chat_settings.title').AsString,
+      'Данные чата должны быть доступны из результата');
+  finally
+    aResult.Free;
+  end;
+end;
+
+procedure TChatMethodsTests.TestGetConversationMembers_DefaultParams;
+var
+  aURL: string;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckNotNull(fBot.GetConversationMembers(2000000042));
+
+  aURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos('messages.getConversationMembers', aURL) > 0, 'Должен вызываться метод');
+  CheckTrue(Pos('peer_id=2000000042', aURL) > 0);
+  CheckTrue(Pos('count=200', aURL) > 0, 'По умолчанию 200 участников');
+  CheckFalse(Pos('fields=', aURL) > 0, 'Без aFields параметра быть не должно');
+end;
+
+procedure TChatMethodsTests.TestGetConversationMembers_CustomParams;
+var
+  aURL: string;
+begin
+  TMockHTTPClient.ClearCalls;
+  CheckNotNull(fBot.GetConversationMembers(2000000042, 'first_name', 50, 100));
+
+  aURL := TMockHTTPClient.GetLastURL;
+  CheckTrue(Pos('fields=' + EncodeURLElement('first_name'), aURL) > 0);
+  CheckTrue(Pos('count=50', aURL) > 0);
+  CheckTrue(Pos('offset=100', aURL) > 0);
+end;
+
 initialization
   RegisterTest(TEventTypeHelperTests);
   RegisterTest(TMessageReplyTests);
@@ -2709,6 +2843,7 @@ initialization
   RegisterTest(TLongPollResponseTests);
   RegisterTest(TUploadInfraTests);
   RegisterTest(TMessagesMethodsTests);
+  RegisterTest(TChatMethodsTests);
   RegisterTest(TIntegrationTests);
 
 end.

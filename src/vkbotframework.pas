@@ -226,6 +226,15 @@ type
     function UnpinMessage(aPeerID: Int64): Boolean;
     { "typing..." indicator: aType is 'typing' or 'audiomessage' }
     function SetActivity(aPeerID: Int64; const aType: string = 'typing'): Boolean;
+    { Group chats (Telegram supergroup equivalents) }
+    { Create a multi-chat with the users, returns chat_id (0 on failure).
+      Peer for the new chat is 2000000000 + chat_id. }
+    function CreateChat(const aUserIDs: array of Int64; const aTitle: string): Int64;
+    function EditChatTitle(aChatID: Int64; const aTitle: string): Boolean;
+    { Chat info / member list (caller-owned results) }
+    function GetConversationById(aPeerID: Int64): TJSONData;
+    function GetConversationMembers(aPeerID: Int64; const aFields: string = '';
+      aCount: Integer = 200; aOffset: Int64 = 0): TJSONData;
     { You can specify MessageID or CMID (conversation_message_id) to indentify message to edit.
     For example You can pass MessageID as 0 and CMID as some nonzero value }
     function EditMessage(aPeerID, aMessageID: Int64; const aText: string; aCMID: Int64 = 0;
@@ -969,6 +978,97 @@ begin
     aParams.Add('peer_id', aPeerID);
     aParams.Add('type',    aType);
     Result := Assigned(APICall('messages.setActivity', aParams));
+  finally
+    aParams.Free;
+  end;
+end;
+
+function TVKBot.CreateChat(const aUserIDs: array of Int64; const aTitle: string): Int64;
+var
+  aParams: TJSONObject;
+  aIDs: string;
+  i: Integer;
+  aResponse: TJSONData;
+begin
+  Result := 0;
+  if aTitle.IsEmpty or (Length(aUserIDs) = 0) then
+    Exit;
+
+  aIDs := EmptyStr;
+  for i := Low(aUserIDs) to High(aUserIDs) do
+  begin
+    if not aIDs.IsEmpty then
+      aIDs += ',';
+    aIDs += IntToStr(aUserIDs[i]);
+  end;
+
+  aParams := TJSONObject.Create;
+  try
+    aParams.Add('user_ids', aIDs);
+    aParams.Add('title',    aTitle);
+    aResponse := APICall('messages.createChat', aParams);
+    if Assigned(aResponse) then
+      Result := aResponse.AsInteger;
+  finally
+    aParams.Free;
+  end;
+end;
+
+function TVKBot.EditChatTitle(aChatID: Int64; const aTitle: string): Boolean;
+var
+  aParams: TJSONObject;
+begin
+  Result := False;
+  if (aChatID <= 0) or aTitle.IsEmpty then
+    Exit;
+  aParams := TJSONObject.Create;
+  try
+    aParams.Add('chat_id', aChatID);
+    aParams.Add('title',   aTitle);
+    Result := Assigned(APICall('messages.editChat', aParams));
+  finally
+    aParams.Free;
+  end;
+end;
+
+function TVKBot.GetConversationById(aPeerID: Int64): TJSONData;
+var
+  aParams: TJSONObject;
+  aResponse: TJSONData;
+begin
+  aParams := TJSONObject.Create;
+  try
+    aParams.Add('peer_ids', aPeerID);
+    aResponse := APICall('messages.getConversationsById', aParams);
+    if Assigned(aResponse) then
+      Result := aResponse.Clone
+    else
+      Result := nil;
+  finally
+    aParams.Free;
+  end;
+end;
+
+function TVKBot.GetConversationMembers(aPeerID: Int64; const aFields: string;
+  aCount: Integer; aOffset: Int64): TJSONData;
+var
+  aParams: TJSONObject;
+  aResponse: TJSONData;
+begin
+  aParams := TJSONObject.Create;
+  try
+    aParams.Add('peer_id', aPeerID);
+    if not aFields.IsEmpty then
+      aParams.Add('fields', aFields);
+    aParams.Add('count',   aCount);
+    if aOffset > 0 then
+      aParams.Add('offset', aOffset);
+
+    aResponse := APICall('messages.getConversationMembers', aParams);
+    if Assigned(aResponse) then
+      Result := aResponse.Clone
+    else
+      Result := nil;
   finally
     aParams.Free;
   end;
