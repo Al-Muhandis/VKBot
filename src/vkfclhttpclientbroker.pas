@@ -5,7 +5,7 @@ unit VKFCLHTTPClientBroker;
 interface
 
 uses
-  Classes, SysUtils, fphttpclient, vkbasehttpclient, VKTypes
+  Classes, SysUtils, fphttpclient, opensslsockets, vkbasehttpclient, VKTypes
   ;
 
 type

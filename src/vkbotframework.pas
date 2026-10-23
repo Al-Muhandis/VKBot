@@ -273,7 +273,7 @@ type
 implementation
 
 uses
-  DateUtils, opensslsockets, VKFCLHTTPClientBroker
+  DateUtils, VKFCLHTTPClientBroker
   ;
 
 { TVKMessage }
