@@ -44,6 +44,9 @@ type
     { Duplicate event delivery }
     procedure TestProcessWebhook_DuplicateEventIgnored;
     procedure TestProcessWebhook_DifferentEventIdsProcessed;
+    { lrbotd recreates the processor for every request (Brook per-request
+      actions); the dedup store must survive that }
+    procedure TestProcessWebhook_DuplicateAcrossProcessorInstances;
 
     { Error handling }
     procedure TestProcessWebhook_InvalidJSON;
@@ -292,6 +295,36 @@ begin
   CheckTrue(wrtOK=aResponse1.ResponseType);
   CheckTrue(wrtOK=aResponse2.ResponseType);
   CheckEquals(2, fEventAnswered, 'Разные event_id должны обрабатываться оба');
+end;
+
+procedure TWebhookProcessorTests.TestProcessWebhook_DuplicateAcrossProcessorInstances;
+var
+  aBot2: TMockVKBot;
+  aProcessor2: TVKWebhookProcessor;
+  aResponse: TVKWebhookResponse;
+  aBody: string;
+begin
+  fBot.OnMessageEvent := @MsgEventHandler;
+  aBody := MakeWebhookJSON('message_event',
+    '{"user_id":42,"peer_id":42,"event_id":"cross-instance-dup","payload":{"command":"noop"}}');
+
+  TMockHTTPClient.ClearCalls;
+  fProcessor.ProcessWebhook(aBody);
+
+  { Fresh bot + processor, same event_id: exactly what lrbotd does per request }
+  aBot2 := TMockVKBot.Create('test_token', 123456);
+  aBot2.OnMessageEvent := @MsgEventHandler;
+  aProcessor2 := TVKWebhookProcessor.Create(aBot2, 'confirmation_code_123', 'webhook_secret');
+  try
+    aResponse := aProcessor2.ProcessWebhook(aBody);
+  finally
+    aProcessor2.Free;
+    aBot2.Free;
+  end;
+
+  CheckTrue(wrtOK=aResponse.ResponseType, 'Дубль через новый процессор тоже 200 OK');
+  CheckEquals(1, fEventAnswered, 'Новый экземпляр процессора должен видеть дедуп-состояние');
+  CheckEquals(0, TMockHTTPClient.GetCallCount, 'Повторной обработки быть не должно');
 end;
 
 { --- Error handling tests --- }

@@ -33,7 +33,6 @@ type
   private
     fBot: TVKBot;
     fConfirmationCode: string;
-    fDedup: TVKEventDedup;
     fSecret: string;
     fOnLog: TOnLogEvent;
 
@@ -41,7 +40,6 @@ type
     function ValidateRequest(const aRequest: TVKWebhookRequest): Boolean;
   public
     constructor Create(aBot: TVKBot; const aConfirmationCode: string; const aSecret: string = '');
-    destructor Destroy; override;
 
     { Main webhook processing method }
     { Call this from your HTTP handler with the request body }
@@ -52,11 +50,27 @@ type
     property OnLog: TOnLogEvent read fOnLog write fOnLog;
   end;
 
+{ Dedup storage shared by all processor instances: hosts may recreate the
+  processor for every incoming webhook request (Brook actions are
+  per-request in lrbotd), so a per-instance store would never see a
+  repeat. Single-threaded use, no locking. }
+function SharedEventDedup: TVKEventDedup;
+
 implementation
 
 uses
   jsonparser
   ;
+
+var
+  _SharedEventDedup: TVKEventDedup = nil;
+
+function SharedEventDedup: TVKEventDedup;
+begin
+  if _SharedEventDedup = nil then
+    _SharedEventDedup := TVKEventDedup.Create(VK_WEBHOOK_DEDUP_MAX);
+  Result := _SharedEventDedup;
+end;
 
 { TVKEventDedup }
 
@@ -99,13 +113,6 @@ begin
   fBot := aBot;
   fConfirmationCode := aConfirmationCode;
   fSecret := aSecret;
-  fDedup := TVKEventDedup.Create(VK_WEBHOOK_DEDUP_MAX);
-end;
-
-destructor TVKWebhookProcessor.Destroy;
-begin
-  fDedup.Free;
-  inherited;
 end;
 
 procedure TVKWebhookProcessor.DoLog(aLevel: TLogLevel; const aMessage: string);
@@ -182,7 +189,7 @@ begin
       if Assigned(aRequest.EventObject) then
       begin
         aEventID := aRequest.EventObject.Get('event_id', EmptyStr);
-        if (aEventID <> EmptyStr) and not fDedup.IsNew(aTypeStr + ':' + aEventID) then
+        if (aEventID <> EmptyStr) and not SharedEventDedup.IsNew(aTypeStr + ':' + aEventID) then
         begin
           DoLog(llWarning, Format('Duplicate %s event_id %s ignored', [aTypeStr, aEventID]));
           Exit(CreateWebhookOKResponse);
@@ -235,5 +242,8 @@ begin
     end;
   end;
 end;
+
+finalization
+  _SharedEventDedup.Free;
 
 end.
