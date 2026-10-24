@@ -30,7 +30,10 @@ constructor TFCLHTTPClient.Create(aOwner: TComponent);
 begin
   inherited Create(aOwner);
   fClient := TFPHTTPClient.Create(nil);
-  fClient.ConnectTimeout := 10000;
+  { Short connect timeout: a fresh TCP+TLS connection to VK normally
+    takes well under a second; failing fast lets APICall retry with a
+    new connection instead of stalling the whole single-threaded bot }
+  fClient.ConnectTimeout := 4000;
   { Must exceed VK_LONG_POLL_WAIT: the LongPoll server holds an idle
     connection for the whole wait period before replying }
   fClient.IOTimeout := (VK_LONG_POLL_WAIT + 10) * 1000;

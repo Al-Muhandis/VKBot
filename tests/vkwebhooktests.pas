@@ -14,12 +14,14 @@ type
   private
     fBot: TMockVKBot;
     fHandlerCalled: Boolean;
+    fEventAnswered: Integer;
     fProcessor: TVKWebhookProcessor;
     fLogMessages: TStringList;
 
     procedure FailingHandler(const {%H-}aEvent: TJSONObject);
     procedure OnLog(aLevel: TLogLevel; const aMessage: string);
     procedure MsgHandler(const aMsg: TVKMessage);
+    procedure MsgEventHandler(const aEvent: TVKMessageEvent);
   protected
     procedure SetUp; override;
     procedure TearDown; override;
@@ -38,6 +40,10 @@ type
     procedure TestProcessWebhook_MessageNewEvent;
     procedure TestProcessWebhook_UnknownEventType;
     procedure TestProcessWebhook_MissingObjectField;
+
+    { Duplicate event delivery }
+    procedure TestProcessWebhook_DuplicateEventIgnored;
+    procedure TestProcessWebhook_DifferentEventIdsProcessed;
 
     { Error handling }
     procedure TestProcessWebhook_InvalidJSON;
@@ -90,6 +96,7 @@ begin
   fBot := TMockVKBot.Create('test_token', 123456);
   fBot.OnLog := @OnLog;
   TMockHTTPClient.SetDefaultResponse('{"response":1}');
+  fEventAnswered := 0;
 
   fProcessor := TVKWebhookProcessor.Create(fBot, 'confirmation_code_123', 'webhook_secret');
   fProcessor.OnLog := @OnLog;
@@ -116,6 +123,12 @@ procedure TWebhookProcessorTests.MsgHandler(const aMsg: TVKMessage);
 begin
   fHandlerCalled := True;
   CheckEquals('Hello from webhook', aMsg.Text);
+end;
+
+procedure TWebhookProcessorTests.MsgEventHandler(const aEvent: TVKMessageEvent);
+begin
+  Inc(fEventAnswered);
+  aEvent.Answer;
 end;
 
 { --- Confirmation tests --- }
@@ -241,6 +254,46 @@ begin
   CheckTrue(wrtError=aResponse.ResponseType);
 end;
 
+{ --- Duplicate event delivery tests --- }
+
+procedure TWebhookProcessorTests.TestProcessWebhook_DuplicateEventIgnored;
+var
+  aResponse1, aResponse2: TVKWebhookResponse;
+  aBody: string;
+begin
+  fBot.OnMessageEvent := @MsgEventHandler;
+  aBody := MakeWebhookJSON('message_event',
+    '{"user_id":42,"peer_id":42,"event_id":"dup123","payload":{"command":"test"}}');
+
+  TMockHTTPClient.ClearCalls;
+  aResponse1 := fProcessor.ProcessWebhook(aBody);
+  aResponse2 := fProcessor.ProcessWebhook(aBody);
+
+  CheckTrue(wrtOK=aResponse1.ResponseType, 'Первое событие должно обработаться');
+  CheckTrue(wrtOK=aResponse2.ResponseType, 'Дубль тоже должен получить 200 OK');
+  CheckEquals(1, fEventAnswered, 'Обработчик должен вызваться один раз');
+  CheckEquals(1, TMockHTTPClient.GetCallCount, 'Дубль не должен порождать API-вызовы');
+  CheckTrue(fLogMessages.IndexOf('[2]Duplicate message_event event_id dup123 ignored') >= 0,
+    'Должен быть лог об игнорировании дубля');
+end;
+
+procedure TWebhookProcessorTests.TestProcessWebhook_DifferentEventIdsProcessed;
+var
+  aResponse1, aResponse2: TVKWebhookResponse;
+begin
+  fBot.OnMessageEvent := @MsgEventHandler;
+
+  TMockHTTPClient.ClearCalls;
+  aResponse1 := fProcessor.ProcessWebhook(MakeWebhookJSON('message_event',
+    '{"user_id":42,"peer_id":42,"event_id":"evt001","payload":{"command":"test"}}'));
+  aResponse2 := fProcessor.ProcessWebhook(MakeWebhookJSON('message_event',
+    '{"user_id":42,"peer_id":42,"event_id":"evt002","payload":{"command":"test"}}'));
+
+  CheckTrue(wrtOK=aResponse1.ResponseType);
+  CheckTrue(wrtOK=aResponse2.ResponseType);
+  CheckEquals(2, fEventAnswered, 'Разные event_id должны обрабатываться оба');
+end;
+
 { --- Error handling tests --- }
 
 procedure TWebhookProcessorTests.TestProcessWebhook_InvalidJSON;
@@ -275,12 +328,16 @@ begin
   aBotWithException.EventHandlers[etMessageNew]:=@FailingHandler;
 
   aProcessorWithException := TVKWebhookProcessor.Create(aBotWithException, 'code', '');
+  aProcessorWithException.OnLog := @OnLog;
   try
     aResponse := aProcessorWithException.ProcessWebhook(
       '{"type":"message_new","object":{"message":{"text":"boom"}},"group_id":123}');
 
-    // Error in handler must not to fail reply
-    CheckTrue(wrtError=aResponse.ResponseType, 'Исключение в обработчике должно быть перехвачено');
+    { VK counts failed webhook attempts and may disable the callback, so a
+      handler failure must still be answered with 200 OK }
+    CheckTrue(wrtOK=aResponse.ResponseType, 'Исключение в обработчике не должно ломать ответ (200 OK)');
+    CheckTrue(fLogMessages.IndexOf('[3]Event message_new processing error. Exception:Simulated processing error') >= 0,
+      'Ошибка обработчика должна попасть в лог');
   finally
     aProcessorWithException.Free;
     aBotWithException.Free;

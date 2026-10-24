@@ -23,8 +23,10 @@ type
       TURLResponseVector = specialize TVector<TURLResponse>;
     var
     class var fResponses: TURLResponseVector;
+    class var fSequentialResponses: TURLResponseVector;
     class var fCallLog: TStringList;
     class var fDefaultResponse: string;
+    class var fFailNextCalls: Integer;
     class procedure FreeCallStorage;
   public
     function Get(const aURL: string): string; override;
@@ -36,6 +38,11 @@ type
 
     { Mock control methods }
     class procedure AddResponse(const aURLPattern: string; const aResponseStr: string);
+    { Response returned ONCE for the next call matching the pattern,
+      then removed (for error-then-success sequences) }
+    class procedure AddSequentialResponse(const aURLPattern: string; const aResponseStr: string);
+    { Make the next N Get calls raise EHTTPClient (network failures) }
+    class procedure FailNextNCalls(aCount: Integer);
     class procedure SetDefaultResponse(const aResponse: string);
     class function GetCallCount: Integer;
     class function GetCall(aIndex: Integer): string;
@@ -59,6 +66,7 @@ implementation
 class procedure TMockHTTPClient.FreeCallStorage;
 begin
   fResponses.Clear;
+  fSequentialResponses.Clear;
   fCallLog.Clear;
 end;
 
@@ -68,6 +76,21 @@ var
   aResponse: TURLResponse;
 begin
   fCallLog.Add(aURL);
+
+  if fFailNextCalls > 0 then
+  begin
+    Dec(fFailNextCalls);
+    raise EHTTPClient.Create('mock connection refused');
+  end;
+
+  if fSequentialResponses.Size > 0 then
+    for i := 0 to fSequentialResponses.Size - 1 do
+      if Pos(fSequentialResponses[i].URL, aURL) > 0 then
+      begin
+        Result := fSequentialResponses[i].Response;
+        fSequentialResponses.Erase(i);
+        Exit;
+      end;
 
   if fResponses.Size=0 then
     Exit(fDefaultResponse);
@@ -113,6 +136,20 @@ begin
   aResponse.URL := aURLPattern;
   aResponse.Response := aResponseStr;
   fResponses.PushBack(aResponse);
+end;
+
+class procedure TMockHTTPClient.AddSequentialResponse(const aURLPattern: string; const aResponseStr: string);
+var
+  aResponse: TURLResponse;
+begin
+  aResponse.URL := aURLPattern;
+  aResponse.Response := aResponseStr;
+  fSequentialResponses.PushBack(aResponse);
+end;
+
+class procedure TMockHTTPClient.FailNextNCalls(aCount: Integer);
+begin
+  fFailNextCalls := aCount;
 end;
 
 class procedure TMockHTTPClient.SetDefaultResponse(const aResponse: string);
@@ -170,6 +207,7 @@ class procedure TMockHTTPClient.InitiateCallStorage;
 begin
   FreeCallStorage;
   fDefaultResponse := '{"response":{}}';
+  fFailNextCalls := 0;
 end;
 
 { TMockVKBot }
@@ -186,10 +224,13 @@ initialization
 
   TMockHTTPClient.fCallLog:=TStringList.Create;
   TMockHTTPClient.fResponses:=TMockHTTPClient.TURLResponseVector.Create;
+  TMockHTTPClient.fSequentialResponses:=TMockHTTPClient.TURLResponseVector.Create;
   TMockHTTPClient.fDefaultResponse:=EmptyStr;
+  TMockHTTPClient.fFailNextCalls:=0;
 
 finalization
   TMockHTTPClient.fResponses.Free;
+  TMockHTTPClient.fSequentialResponses.Free;
   TMockHTTPClient.fCallLog.Free;
 
 end.

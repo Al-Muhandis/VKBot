@@ -161,6 +161,22 @@ const
   VK_BASE_API_URL   = 'https://api.vk.com/method/';
   VK_ME_BASE_URL    = 'https://vk.me/';
 
+  { API retry policy: transient network failures and VK rate limits
+    (6 = too many requests per second, 9 = flood control, 10 = internal
+    server error, 29 = rate limit reached) are retried with a pause;
+    everything else (100 invalid event_id from re-delivered callbacks,
+    14 captcha, 5 auth, bad params) is not retried }
+  VK_API_MAX_ATTEMPTS     = 3;
+  VK_API_RETRY_ERR6_MS    = 500;
+  VK_API_RETRY_ERR9_MS    = 2000;
+  VK_API_RETRY_ERR10_MS   = 1000;
+  VK_API_RETRY_ERR29_MS   = 2000;
+  VK_API_RETRY_NETWORK_MS = 500;  { base delay for network failures, grows per attempt }
+
+  { Webhook event dedup: VK re-delivers callback events it considers
+    unconfirmed; remember this many recent event ids }
+  VK_WEBHOOK_DEDUP_MAX = 200;
+
   { Default webhook responses }
   VK_WEBHOOK_OK          = 'ok';
   VK_HTTP_OK             = 200;

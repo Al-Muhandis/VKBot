@@ -218,6 +218,15 @@ type
     procedure TestMultipleAPICallsLogged;
     procedure TestSendMessageContainsRandomId;
     procedure TestRandomIdUniquePerCall;
+
+    { Retry policy: network failures and VK rate limits are retried,
+      non-retryable errors are not }
+    procedure TestRetryAfterNetworkError;
+    procedure TestGivesUpAfterPersistentNetworkError;
+    procedure TestRetryOnVKError6;
+    procedure TestRetryOnVKError9;
+    procedure TestNoRetryOnVKError100;
+    procedure TestSuccessAfterVKErrorNoExtraCalls;
   end;
 
   { TIntegrationTests }
@@ -1142,6 +1151,72 @@ end;
 procedure TAPICallTests.TearDown;
 begin
   fBot.Free;
+end;
+
+{ --- Retry policy tests --- }
+
+procedure TAPICallTests.TestRetryAfterNetworkError;
+begin
+  TMockHTTPClient.ClearCalls;
+  TMockHTTPClient.SetDefaultResponse('{"response":1}');
+  TMockHTTPClient.FailNextNCalls(1);
+
+  CheckTrue(fBot.SendMessageEventAnswer(7, 7, 'evt1'), 'Вызов должен удаться со второй попытки');
+  CheckEquals(2, TMockHTTPClient.GetCallCount, 'Должно быть две попытки (сбой + успех)');
+end;
+
+procedure TAPICallTests.TestGivesUpAfterPersistentNetworkError;
+begin
+  TMockHTTPClient.ClearCalls;
+  TMockHTTPClient.SetDefaultResponse('{"response":1}');
+  TMockHTTPClient.FailNextNCalls(10);
+
+  CheckFalse(fBot.SendMessageEventAnswer(7, 7, 'evt2'), 'Постоянный сбой сети должен дать False');
+  CheckEquals(VK_API_MAX_ATTEMPTS, TMockHTTPClient.GetCallCount,
+    'Количество попыток должно ограничиваться VK_API_MAX_ATTEMPTS');
+end;
+
+procedure TAPICallTests.TestRetryOnVKError6;
+begin
+  TMockHTTPClient.ClearCalls;
+  TMockHTTPClient.SetDefaultResponse('{"response":1}');
+  TMockHTTPClient.AddSequentialResponse('sendMessageEventAnswer',
+    '{"error":{"error_code":6,"error_msg":"Too many requests per second"}}');
+
+  CheckTrue(fBot.SendMessageEventAnswer(7, 7, 'evt3'), 'Ошибка 6 должна перезапрашиваться');
+  CheckEquals(2, TMockHTTPClient.GetCallCount, 'Ошибка 6 + успех = два вызова');
+end;
+
+procedure TAPICallTests.TestRetryOnVKError9;
+begin
+  TMockHTTPClient.ClearCalls;
+  TMockHTTPClient.SetDefaultResponse('{"response":1}');
+  TMockHTTPClient.AddSequentialResponse('sendMessageEventAnswer',
+    '{"error":{"error_code":9,"error_msg":"Flood control: too much messages sent to user"}}');
+
+  CheckTrue(fBot.SendMessageEventAnswer(7, 7, 'evt4'), 'Flood control должен перезапрашиваться');
+  CheckEquals(2, TMockHTTPClient.GetCallCount, 'Ошибка 9 + успех = два вызова');
+end;
+
+procedure TAPICallTests.TestNoRetryOnVKError100;
+begin
+  TMockHTTPClient.ClearCalls;
+  TMockHTTPClient.SetDefaultResponse('{"response":1}');
+  TMockHTTPClient.AddSequentialResponse('sendMessageEventAnswer',
+    '{"error":{"error_code":100,"error_msg":"invalid event_id"}}');
+
+  CheckFalse(fBot.SendMessageEventAnswer(7, 7, 'evt5'),
+    'Неперезапрашиваемая ошибка должна дать False');
+  CheckEquals(1, TMockHTTPClient.GetCallCount, 'Ошибка 100 не должна ретраиться');
+end;
+
+procedure TAPICallTests.TestSuccessAfterVKErrorNoExtraCalls;
+begin
+  TMockHTTPClient.ClearCalls;
+  TMockHTTPClient.SetDefaultResponse('{"response":1}');
+
+  CheckTrue(fBot.SendMessageEventAnswer(7, 7, 'evt6'));
+  CheckEquals(1, TMockHTTPClient.GetCallCount, 'Успех с первой попытки = один вызов');
 end;
 
 procedure TAPICallTests.TestAPICallURLFormat;

@@ -524,8 +524,26 @@ end;
 function TVKBot.APICall(const aMethod: string; const aParams: TJSONObject): TJSONData;
 var
   aURL, aResponse: string;
-  i: Integer;
+  i, aAttempt: Integer;
+  aErrCode: Integer;
+  aDelayMs: Integer;
+  aStartMs: QWord;
+  aErrObj: TJSONData;
   aHTTPClient: TBaseHTTPClient;
+
+  { Retry pause for a VK error code; 0 = do not retry }
+  function ErrorRetryDelay(aCode: Integer): Integer;
+  begin
+    case aCode of
+      6:  Result := VK_API_RETRY_ERR6_MS;
+      9:  Result := VK_API_RETRY_ERR9_MS;
+      10: Result := VK_API_RETRY_ERR10_MS;
+      29: Result := VK_API_RETRY_ERR29_MS;
+    else
+      Result := 0;
+    end;
+  end;
+
 begin
   Result := nil;
 
@@ -535,21 +553,84 @@ begin
     for i := 0 to aParams.Count - 1 do
       aURL += Format('&%s=%s', [aParams.Names[i], EncodeURLElement(aParams.Items[i].AsString)]);
 
-  aHTTPClient  := TBaseHTTPClient.GetClientClass.Create(nil);
-  try
-    FreeAndNil(fJSON);
-    aResponse := aHTTPClient.Get(aURL);
-    fJSON := GetJSON(aResponse);
+  FreeAndNil(fJSON);
+  for aAttempt := 1 to VK_API_MAX_ATTEMPTS do
+  begin
+    aResponse := EmptyStr;
+    try
+      aStartMs := GetTickCount64;
+      aHTTPClient := TBaseHTTPClient.GetClientClass.Create(nil);
+      try
+        aResponse := aHTTPClient.Get(aURL);
+      finally
+        aHTTPClient.Free;
+      end;
+    except
+      on E: Exception do
+      begin
+        if aAttempt < VK_API_MAX_ATTEMPTS then
+        begin
+          aDelayMs := VK_API_RETRY_NETWORK_MS * aAttempt;
+          DoLog(llWarning, Format('API call %s attempt %d/%d failed (%s: %s), retrying in %d ms',
+            [aMethod, aAttempt, VK_API_MAX_ATTEMPTS, E.ClassName, E.Message, aDelayMs]));
+          Sleep(aDelayMs);
+          Continue;
+        end;
+        DoLog(llError, Format('API call failed: %s, network error after %d attempts (%s: %s)',
+          [aMethod, VK_API_MAX_ATTEMPTS, E.ClassName, E.Message]));
+        Exit(nil);
+      end;
+    end;
+
+    try
+      fJSON := GetJSON(aResponse);
+    except
+      FreeAndNil(fJSON);
+      if aAttempt < VK_API_MAX_ATTEMPTS then
+      begin
+        DoLog(llWarning, Format('API call %s attempt %d/%d returned invalid JSON, retrying',
+          [aMethod, aAttempt, VK_API_MAX_ATTEMPTS]));
+        Sleep(VK_API_RETRY_NETWORK_MS);
+        Continue;
+      end;
+      DoLog(llError, Format('API call failed: %s, invalid JSON after %d attempts, response: %s',
+        [aMethod, VK_API_MAX_ATTEMPTS, aResponse]));
+      Exit(nil);
+    end;
 
     if fJSON is TJSONObject then
-      Result := TJSONObject(fJSON).Find('response');
-
-    if not Assigned(Result) then
-      DoLog(llError, Format('API call failed: %s, response: %s', [aMethod, aResponse]))
+      Result := TJSONObject(fJSON).Find('response')
     else
-      DoLog(llDebug, Format('API call: %s, response: %s', [aMethod, aResponse]));
-  finally
-    aHTTPClient.Free;
+      Result := nil;
+
+    if Assigned(Result) then
+    begin
+      DoLog(llDebug, Format('API call: %s (%d ms), response: %s',
+        [aMethod, GetTickCount64 - aStartMs, aResponse]));
+      Exit;
+    end;
+
+    aErrCode := 0;
+    if fJSON is TJSONObject then
+    begin
+      aErrObj := TJSONObject(fJSON).Find('error');
+      if aErrObj is TJSONObject then
+        aErrCode := TJSONObject(aErrObj).Get('error_code', 0);
+    end;
+    aDelayMs := ErrorRetryDelay(aErrCode);
+
+    if (aDelayMs > 0) and (aAttempt < VK_API_MAX_ATTEMPTS) then
+    begin
+      DoLog(llWarning, Format('API call %s attempt %d/%d failed with VK error %d, retrying in %d ms',
+        [aMethod, aAttempt, VK_API_MAX_ATTEMPTS, aErrCode, aDelayMs]));
+      FreeAndNil(fJSON);
+      Result := nil;
+      Sleep(aDelayMs);
+      Continue;
+    end;
+
+    DoLog(llError, Format('API call failed: %s, response: %s', [aMethod, aResponse]));
+    Exit(nil);
   end;
 end;
 
