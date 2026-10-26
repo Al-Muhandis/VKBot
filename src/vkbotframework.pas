@@ -1592,12 +1592,27 @@ begin
   if not Assigned(aSaved) then
     Exit;
   try
-    if not (aSaved is TJSONArray) or (TJSONArray(aSaved).Count = 0) then
-      Exit;
-    if not (TJSONArray(aSaved).Items[0] is TJSONObject) then
+    { docs.save returns a bare array on old API versions and
+      {"type":...,"doc":{...}} (or audio_message analog) since ~5.100 }
+    if aSaved is TJSONArray then
+    begin
+      if (TJSONArray(aSaved).Count = 0) or
+        not (TJSONArray(aSaved).Items[0] is TJSONObject) then
+        Exit;
+      aItem := TJSONObject(TJSONArray(aSaved).Items[0]);
+    end
+    else if aSaved is TJSONObject then
+    begin
+      if aVoice then
+        aItem := TJSONObject(aSaved).Get('audio_message', TJSONObject(nil))
+      else
+        aItem := TJSONObject(aSaved).Get('doc', TJSONObject(nil));
+      if not Assigned(aItem) then
+        Exit;
+    end
+    else
       Exit;
 
-    aItem := TJSONObject(TJSONArray(aSaved).Items[0]);
     if aVoice then
       Result := Format('audio_message%d_%d', [aItem.Get('owner_id', Int64(0)), aItem.Get('id', Int64(0))])
     else
