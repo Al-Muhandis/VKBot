@@ -219,6 +219,10 @@ type
     { aReplyTo — conversation_message_id of the message to quote (0 = plain send) }
     function SendMessage(aPeerID: Int64; const aText: string; const aKeyboard: string = '';
       const aAttachment: string = ''; aReplyTo: Int64 = 0): Boolean;
+    { Same send, but returns the new message_id (0 on failure) — needed to
+      edit or delete the message later }
+    function SendMessageGetID(aPeerID: Int64; const aText: string; const aKeyboard: string = '';
+      const aAttachment: string = ''; aReplyTo: Int64 = 0): Int64;
     { Fetch recent dialog history (messages.getHistory), caller-owned result }
     function GetHistory(aPeerID: Int64; aCount: Integer = 20; aOffset: Int64 = 0): TJSONData;
     { Pin/unpin the chat's pinned message (aConversationMessageID = cmid) }
@@ -276,6 +280,10 @@ type
     function UploadPhoto(aPeerID: Int64; const aFileName: string): string;
     function UploadDoc(aPeerID: Int64; const aFileName: string; const aTitle: string = '';
       const aTags: string = ''; aVoice: Boolean = False): string;
+    { Native community video: video.save -> upload; returns
+      "video<owner>_<id>" or ''. No separate save step — VK processes the
+      file asynchronously. Requires the video right on the token. }
+    function UploadVideo(aGroupID: Int64; const aFileName: string; const aTitle: string = ''): string;
     function SendPhoto(aPeerID: Int64; const aFileName: string; const aCaption: string = ''): Boolean;
     function SendVoiceMessage(aPeerID: Int64; const aFileName: string): Boolean;
     function SendDocument(aPeerID: Int64; const aFileName: string; const aTitle: string = ''): Boolean;
@@ -983,12 +991,13 @@ begin
   Result := _RandomID;
 end;
 
-function TVKBot.SendMessage(aPeerID: Int64; const aText: string; const aKeyboard: string;
-  const aAttachment: string; aReplyTo: Int64): Boolean;
+function TVKBot.SendMessageGetID(aPeerID: Int64; const aText: string; const aKeyboard: string;
+  const aAttachment: string; aReplyTo: Int64): Int64;
 var
   aParams: TJSONObject;
+  aResponse: TJSONData;
 begin
-  Result  := False;
+  Result  := 0;
   aParams := TJSONObject.Create;
   try
     aParams.Add('peer_id',   aPeerID);
@@ -1000,10 +1009,18 @@ begin
       aParams.Add('attachment', aAttachment);
     if aReplyTo <> 0 then
       aParams.Add('reply_to', aReplyTo);
-    Result := Assigned(APICall('messages.send', aParams));
+    aResponse := APICall('messages.send', aParams);
+    if Assigned(aResponse) then
+      Result := aResponse.AsInteger;
   finally
     aParams.Free;
   end;
+end;
+
+function TVKBot.SendMessage(aPeerID: Int64; const aText: string; const aKeyboard: string;
+  const aAttachment: string; aReplyTo: Int64): Boolean;
+begin
+  Result := SendMessageGetID(aPeerID, aText, aKeyboard, aAttachment, aReplyTo) <> 0;
 end;
 
 function TVKBot.GetHistory(aPeerID: Int64; aCount: Integer; aOffset: Int64): TJSONData;
@@ -1454,23 +1471,36 @@ end;
 
 function TVKBot.UploadFile(const aUploadURL, aFieldName, aFileName: string): string;
 var
-  aClient: TBaseHTTPClient;
+  aClient: TFPHTTPClient;
+  aResponse: TStringStream;
 begin
   Result := EmptyStr;
   if aUploadURL.IsEmpty or aFieldName.IsEmpty or aFileName.IsEmpty then
     Exit;
 
-  aClient := TBaseHTTPClient.GetClientClass.Create(nil);
+  { TFPHTTPClient.PostFile sends a bare multipart part that VK upload
+    servers silently drop (empty "photo" back in the response), so the
+    raw client's FileFormPost is used instead }
+  aClient := TFPHTTPClient.Create(nil);
   try
+    aClient.IOTimeout := 60000;
+    aClient.ConnectTimeout := 15000;
+    aResponse := TStringStream.Create('');
     try
-      Result := aClient.PostFile(aUploadURL, aFieldName, aFileName);
-      DoLog(llDebug, Format('File uploaded: %s -> %s', [aFileName, aUploadURL]));
-    except
-      on E: Exception do
-      begin
-        DoLog(llError, Format('File upload failed: %s, error: %s', [aFileName, E.Message]));
-        Result := EmptyStr;
+      try
+        aClient.FileFormPost(aUploadURL, aFieldName, aFileName, aResponse);
+        Result := aResponse.DataString;
+        DoLog(llDebug, Format('File uploaded: %s -> %s, response: %s',
+          [aFileName, aUploadURL, Result]));
+      except
+        on E: Exception do
+        begin
+          DoLog(llError, Format('File upload failed: %s, error: %s', [aFileName, E.Message]));
+          Result := EmptyStr;
+        end;
       end;
+    finally
+      aResponse.Free;
     end;
   finally
     aClient.Free;
@@ -1620,6 +1650,40 @@ begin
   finally
     aSaved.Free;
   end;
+end;
+
+function TVKBot.UploadVideo(aGroupID: Int64; const aFileName: string; const aTitle: string): string;
+var
+  aParams: TJSONObject;
+  aSaveInfo: TJSONData;
+  aUploadURL: string;
+  aOwnerID, aVideoID: Int64;
+begin
+  Result := EmptyStr;
+  if aFileName.IsEmpty or (aGroupID <= 0) then
+    Exit;
+
+  aParams := TJSONObject.Create;
+  try
+    aParams.Add('group_id', aGroupID);
+    if not aTitle.IsEmpty then
+      aParams.Add('name', aTitle);
+    aSaveInfo := APICall('video.save', aParams);
+  finally
+    aParams.Free;
+  end;
+  { aSaveInfo is bot-owned (freed on the next APICall) — read in place }
+  if not (aSaveInfo is TJSONObject) then
+    Exit;
+  aUploadURL := TJSONObject(aSaveInfo).Get('upload_url', EmptyStr);
+  aOwnerID   := TJSONObject(aSaveInfo).Get('owner_id', Int64(0));
+  aVideoID   := TJSONObject(aSaveInfo).Get('video_id', Int64(0));
+  if aUploadURL.IsEmpty or (aVideoID = 0) then
+    Exit;
+
+  if UploadFile(aUploadURL, 'video_file', aFileName).IsEmpty then
+    Exit;
+  Result := Format('video%d_%d', [aOwnerID, aVideoID]);
 end;
 
 function TVKBot.SendPhoto(aPeerID: Int64; const aFileName: string; const aCaption: string): Boolean;

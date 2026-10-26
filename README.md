@@ -31,6 +31,8 @@
 ### 3) Отправка, редактирование и удаление сообщений
 
 - Отправка через `SendMessage` и методы `TVKMessage.Reply/Send`.
+- `SendMessageGetID` — та же отправка, но возвращает `message_id` нового сообщения (нужен для последующих правок/удалений).
+- Медиа-вложения: `UploadPhoto` (фото), `UploadDoc` (документы и голосовые `audio_message`), `UploadVideo` (нативное видео сообщества через `video.save`) возвращают строку вложения (`photo|doc|video<owner>_<id>`), пригодную для `SendMessage`/`EditMessage` через параметр `attachment`.
 - Редактирование через `EditMessage`.
 - Удаление через `DeleteMessage` (VK API `messages.delete`, есть перегрузка для одного и нескольких `message_id`, опционально `delete_for_all`).
 - Построитель клавиатур `TVKKeyboard`:
