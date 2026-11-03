@@ -573,6 +573,10 @@ begin
       aURL += Format('&%s=%s', [aParams.Names[i], EncodeURLElement(aParams.Items[i].AsString)]);
 
   FreeAndNil(fJSON);
+  { Trace the call start: the matching 'API call: ...' line appears only on
+    success, so when the request loop stalls (DNS, TLS, socket read), this
+    line is the last one in the log and names the method in flight }
+  DoLog(llDebug, Format('API call %s: begin', [aMethod]));
   for aAttempt := 1 to VK_API_MAX_ATTEMPTS do
   begin
     aResponse := EmptyStr;
