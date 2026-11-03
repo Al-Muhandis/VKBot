@@ -180,6 +180,9 @@ type
 
     procedure InitLongPoll;
     function APICall(const aMethod: string; const aParams: TJSONObject): TJSONData;
+    { Same call with an explicit token: for methods the community key is
+      not allowed to invoke (e.g. video.save needs a user token) }
+    function APICallAs(const aToken, aMethod: string; const aParams: TJSONObject): TJSONData;
     procedure DoLog(aLogLevel: TLogLevel; const aMessage: String);
 
     function GetCommandHandler(const aCommand: string): TCommandHandler;
@@ -282,8 +285,11 @@ type
       const aTags: string = ''; aVoice: Boolean = False): string;
     { Native community video: video.save -> upload; returns
       "video<owner>_<id>" or ''. No separate save step — VK processes the
-      file asynchronously. Requires the video right on the token. }
-    function UploadVideo(aGroupID: Int64; const aFileName: string; const aTitle: string = ''): string;
+      file asynchronously. VK denies video.save to community keys, so pass
+      a user token with the video scope in aUserToken (empty = the
+      community token, works only when VK allows it for the key). }
+    function UploadVideo(aGroupID: Int64; const aFileName: string; const aTitle: string = '';
+      const aUserToken: string = ''): string;
     function SendPhoto(aPeerID: Int64; const aFileName: string; const aCaption: string = ''): Boolean;
     function SendVoiceMessage(aPeerID: Int64; const aFileName: string): Boolean;
     function SendDocument(aPeerID: Int64; const aFileName: string; const aTitle: string = ''): Boolean;
@@ -530,6 +536,11 @@ begin
 end;
 
 function TVKBot.APICall(const aMethod: string; const aParams: TJSONObject): TJSONData;
+begin
+  Result := APICallAs(fToken, aMethod, aParams);
+end;
+
+function TVKBot.APICallAs(const aToken, aMethod: string; const aParams: TJSONObject): TJSONData;
 var
   aURL, aResponse: string;
   i, aAttempt: Integer;
@@ -555,7 +566,7 @@ var
 begin
   Result := nil;
 
-  aURL := Format('%s%s?access_token=%s&v=%s', [VK_BASE_API_URL, aMethod, fToken, fAPIVersion]);
+  aURL := Format('%s%s?access_token=%s&v=%s', [VK_BASE_API_URL, aMethod, aToken, fAPIVersion]);
 
   if Assigned(aParams) then
     for i := 0 to aParams.Count - 1 do
@@ -1652,7 +1663,8 @@ begin
   end;
 end;
 
-function TVKBot.UploadVideo(aGroupID: Int64; const aFileName: string; const aTitle: string): string;
+function TVKBot.UploadVideo(aGroupID: Int64; const aFileName: string; const aTitle: string;
+  const aUserToken: string): string;
 var
   aParams: TJSONObject;
   aSaveInfo: TJSONData;
@@ -1668,7 +1680,10 @@ begin
     aParams.Add('group_id', aGroupID);
     if not aTitle.IsEmpty then
       aParams.Add('name', aTitle);
-    aSaveInfo := APICall('video.save', aParams);
+    if aUserToken.IsEmpty then
+      aSaveInfo := APICall('video.save', aParams)
+    else
+      aSaveInfo := APICallAs(aUserToken, 'video.save', aParams);
   finally
     aParams.Free;
   end;
