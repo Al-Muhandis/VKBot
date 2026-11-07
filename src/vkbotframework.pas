@@ -929,6 +929,10 @@ begin
   DoLog(llInfo, Format('Bot started. GroupID: %d, API v%s', [fGroupID, fAPIVersion]));
 
   aHTTPClient := TBaseHTTPClient.GetClientClass.Create(nil);
+  { The LongPoll server holds the idle connection for VK_LONG_POLL_WAIT
+    seconds before replying, so the IO timeout must exceed it (the API
+    broker default VK_API_IO_TIMEOUT_MS is shorter) }
+  aHTTPClient.IOTimeout := (VK_LONG_POLL_WAIT + 10) * 1000;
   try
     while fRunning do
     begin

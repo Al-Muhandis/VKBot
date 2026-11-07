@@ -173,6 +173,12 @@ const
   VK_API_RETRY_ERR29_MS   = 2000;
   VK_API_RETRY_NETWORK_MS = 500;  { base delay for network failures, grows per attempt }
 
+  { Socket IO timeout for a single API call (ms). Bounds a stalled TLS
+    handshake (SO_RCVTIMEO covers SSL_connect, ConnectTimeout does not),
+    so a throttling burst costs ~10s per attempt instead of 35s of
+    unresponsive bot. VK API replies in well under a second. }
+  VK_API_IO_TIMEOUT_MS    = 10000;
+
   { Webhook event dedup: VK re-delivers callback events it considers
     unconfirmed; remember this many recent event ids }
   VK_WEBHOOK_DEDUP_MAX = 200;
